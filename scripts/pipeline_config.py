@@ -79,6 +79,16 @@ class SubtitlesConfig(BaseModel):
     font_path: str | None = None
 
 
+class OverlayMatchingConfig(BaseModel):
+    min_score: float = 0.75
+    ambiguity_margin: float = 0.1
+    min_visible_fraction: float = 0.5
+    min_box_area: float = 0.0002
+    max_box_area: float = 0.25
+    time_margin_seconds: float = 1.0
+    action_type: str = "highlight"
+
+
 class OverlaysConfig(BaseModel):
     font_path: str | None = None
     highlight_color: str = "yellow"
@@ -105,6 +115,7 @@ class PipelineConfig(BaseModel):
     tts: TtsConfig
     retiming: RetimingConfig
     subtitles: SubtitlesConfig
+    overlay_matching: OverlayMatchingConfig
     overlays: OverlaysConfig
     export: ExportConfig
     glossary_file: str

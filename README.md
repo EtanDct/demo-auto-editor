@@ -28,9 +28,18 @@ avec le moment où le narrateur désigne un élément d'interface) :
   narrateur désigne (`ui_reference`) : un élément **nommé** par son libellé,
   une simple **position** ("en haut à gauche"), ou **rien**.
 
-Aucune des deux ne décide encore d'incrustation : l'appariement entre les deux
-reste à écrire. La distinction nommé / position est ce qui évite d'encadrer
-« Top repositories » parce que le narrateur a dit « en haut de la page ».
+L'étape `match` rapproche les deux et propose une incrustation quand la
+correspondance ne laisse pas de place au doute. Elle est réglée pour la
+précision, pas pour le rappel : elle refuse sur score insuffisant, sur
+ambiguïté (le même libellé affiché à deux endroits), sur élément trop fugace ou
+sur boîte aberrante, et consigne le motif de chaque refus. Rien n'atteint le
+conducteur de montage sans `--apply`, et `--contact-sheet` produit une planche
+de relecture (cadre dessiné sur la frame, légende avec score et durée
+d'affichage) : valider une correspondance à l'œil prend deux secondes, saisir
+les coordonnées à la main en prend deux minutes.
+
+La distinction nommé / position est ce qui évite d'encadrer « Top
+repositories » parce que le narrateur a dit « en haut de la page ».
 
 ## Prérequis
 
@@ -93,6 +102,11 @@ python run.py --step validate
 python run.py --step screen
 python scripts/detect_screen_text.py --max-seconds 40   # essai sur une tranche
 python scripts/detect_screen_text.py --regroup          # re-règle sans relancer l'OCR
+
+# Hors pipeline par défaut : appariement narrateur / écran
+python run.py --step match                              # rapport seul
+python scripts/match_overlays.py --contact-sheet        # + planche de relecture
+python scripts/match_overlays.py --apply                # reporter dans l'EDL
 ```
 
 Les étapes lisent et écrivent les fichiers de `data/` : après correction d'un
@@ -143,12 +157,16 @@ Ce que ce passage a corrigé :
 
 Ce qui reste à valider :
 
-- **montage automatique** : l'étape `screen` produit l'inventaire du texte
-  affiché (`data/screen_elements.json`), mais rien ne le consomme encore.
-  L'appariement entre ce que dit le narrateur et ce que montre l'écran reste à
-  écrire, avec ses règles de rejet — sur l'extrait de référence, 40 % des
-  libellés apparaissent à plusieurs endroits et 108 éléments sont visibles par
-  segment en moyenne, donc un appariement naïf produirait surtout des erreurs.
+- **montage automatique** : la chaîne `screen` -> `translate` -> `match` est
+  en place, mais l'extrait de référence ne permet pas de la valider. Le
+  narrateur y décrit au lieu de nommer, et l'interface est en anglais alors que
+  la narration est en français : sur 34 segments, 11 désignent un élément
+  nommé, aucun n'est retrouvable à l'écran, et l'étape `match` en retient donc
+  0 — comportement correct sur cette vidéo, mais qui ne prouve pas que les
+  seuils sont bons. Le chemin d'acceptation est vérifié séparément (contrôle
+  positif sur "Pull requests", score 1.00, boîte correcte). Il faut un extrait
+  où le narrateur nomme des libellés écrits à l'écran, dans la même langue, pour
+  mesurer précision et rappel.
 - **incrustations visuelles** : `visual_action` est toujours à `null` en sortie
   de l'étape `translate` et doit être renseigné à la main. Seul `highlight` a
   été exercé sur du réel à ce jour ; `zoom`, `callout`, `popup` et

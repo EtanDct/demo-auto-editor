@@ -227,3 +227,35 @@ class ScreenTextIndex(BaseModel):
     frames_sampled: int
     frames_analysed: int  # frames réellement passées à l'OCR (les autres sont inchangées)
     elements: list[ScreenElement] = Field(default_factory=list)
+
+
+class OverlayCandidate(BaseModel):
+    """Verdict d'appariement pour un segment (étape `match`).
+
+    Chaque segment désignant un élément nommé produit une entrée, acceptée ou
+    non, avec le motif du refus. C'est ce qui rend le tri relisible : sans le
+    motif, un rappel faible est indiscernable d'un bug.
+    """
+
+    segment_id: str
+    label: str
+    accepted: bool
+    reason: str
+    element_id: str | None = None
+    element_text: str | None = None
+    box: BoundingBox | None = None
+    score: float = 0.0
+    visible_fraction: float = 0.0
+    rivals: list[str] = Field(default_factory=list)
+
+
+class OverlayMatchReport(BaseModel):
+    """Sortie de l'étape `match` : `data/overlay_candidates.json`."""
+
+    candidates: list[OverlayCandidate] = Field(default_factory=list)
+    segments_total: int = 0
+    segments_named: int = 0
+
+    @property
+    def accepted(self) -> list[OverlayCandidate]:
+        return [c for c in self.candidates if c.accepted]

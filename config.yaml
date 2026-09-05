@@ -70,6 +70,19 @@ subtitles:
   max_lines: 2
   font_path: null  # ex: "C:/Windows/Fonts/arial.ttf" ; null = police par défaut FFmpeg
 
+overlay_matching:
+  # Appariement entre ce que le narrateur nomme (ui_reference) et ce que l'OCR
+  # a lu à l'écran. Réglé pour la précision, pas pour le rappel : une
+  # incrustation au mauvais endroit décrédibilise toute la vidéo, une
+  # incrustation manquante ne se voit pas.
+  min_score: 0.75              # en dessous, le libellé ne correspond pas assez
+  ambiguity_margin: 0.1        # deux candidats à moins de ça = ambigu, on renonce
+  min_visible_fraction: 0.5    # l'élément doit être affiché la moitié du segment
+  min_box_area: 0.0002         # sous ce seuil, boîte trop petite pour être crédible
+  max_box_area: 0.25           # au-dessus, l'OCR a capturé un bloc, pas un contrôle
+  time_margin_seconds: 1.0     # tolérance autour du segment (le narrateur anticipe)
+  action_type: highlight       # effet posé sur les correspondances retenues
+
 overlays:
   font_path: null  # ex: "C:/Windows/Fonts/arialbd.ttf" ; requis pour callout/popup sous Windows
   highlight_color: "yellow"
