@@ -1,0 +1,9 @@
+faster-whisper==1.0.3
+huggingface_hub==0.25.2
+llama-cpp-python==0.3.2
+piper-tts==1.2.0
+pydantic==2.9.2
+PyYAML==6.0.2
+typer==0.12.5
+numpy==1.26.4
+psutil==6.0.0
