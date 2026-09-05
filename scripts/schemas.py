@@ -60,6 +60,7 @@ class EditDecision(BaseModel):
     text_fr: str
     text_en: str
     sap_terms: list[str] = Field(default_factory=list)
+    ui_reference: UiReference | None = None
     visual_action: VisualAction | None = None
     narration: NarrationSpec
 
@@ -82,11 +83,48 @@ class NarrationManifestEntry(BaseModel):
     voice: str
 
 
+UiReferenceKind = Literal["named_control", "spatial", "none"]
+
+
+class UiReference(BaseModel):
+    """Ce que le narrateur désigne à l'écran pendant un segment (étape C).
+
+    `kind` distingue les trois cas qui appellent des suites différentes :
+
+    - `named_control` : un élément nommé, dont `label` porte le libellé tel
+      qu'il est censé être affiché — le seul cas exploitable pour poser une
+      incrustation ;
+    - `spatial` : une position ("en haut à gauche") ou une catégorie ("le
+      bouton"), qui ne désigne rien de précis ;
+    - `none` : le narrateur ne montre rien.
+
+    Distinguer `spatial` de `none` n'est pas cosmétique : c'est ce qui permet de
+    mesurer si le modèle rate des cibles ou s'il n'y en avait pas.
+    """
+
+    kind: UiReferenceKind
+    label: str | None = None
+
+    @model_validator(mode="after")
+    def check_label(self) -> "UiReference":
+        if self.kind == "named_control" and not (self.label or "").strip():
+            raise ValueError("named_control exige un label non vide")
+        if self.kind != "named_control" and self.label:
+            raise ValueError(f"un label n'a pas de sens avec kind={self.kind}")
+        return self
+
+
 class TranslationResult(BaseModel):
-    """Sortie JSON attendue du LLM local pour un segment (étape C)."""
+    """Sortie JSON attendue du LLM local pour un segment (étape C).
+
+    Volontairement plate : c'est un modèle 3B quantifié qui la produit, et une
+    structure imbriquée multiplie les sorties invalides.
+    """
 
     text_en: str
     sap_terms: list[str] = Field(default_factory=list)
+    ui_target: str | None = None
+    reference_kind: UiReferenceKind = "none"
 
 
 class GlossaryTerm(BaseModel):

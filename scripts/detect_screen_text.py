@@ -28,9 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import subprocess
-import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,6 +36,7 @@ import typer
 
 from pipeline_config import PipelineConfig, load_config
 from schemas import BoundingBox, ScreenElement, ScreenTextIndex
+from ui_reference import match_key
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
@@ -53,26 +52,6 @@ class Detection:
     box: BoundingBox
     confidence: float
     timestamp: float
-
-
-def normalize_text(text: str) -> str:
-    """Forme lisible canonique : sans casse, sans accents, espaces normalisés."""
-    stripped = unicodedata.normalize("NFKD", text.strip().lower())
-    without_accents = "".join(c for c in stripped if not unicodedata.combining(c))
-    return re.sub(r"\s+", " ", without_accents)
-
-
-def match_key(text: str) -> str:
-    """Clé d'identité d'un libellé, espaces compris.
-
-    L'OCR colle les mots de façon instable d'une frame à l'autre selon le
-    crénage : sur l'extrait de référence, le même libellé ressort tantôt
-    "Top repositories", tantôt "Toprepositories". Les traiter comme deux
-    éléments distincts fragmente l'index et fabrique de fausses ambiguïtés,
-    donc la clé ignore les espaces. Le regroupement reste contraint par le
-    recouvrement des boîtes, ce qui borne le risque de fusion abusive.
-    """
-    return normalize_text(text).replace(" ", "")
 
 
 def load_inspection_report(path: Path) -> dict:

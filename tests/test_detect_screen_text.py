@@ -16,12 +16,11 @@ from detect_screen_text import (
     group_into_elements,
     is_usable_label,
     load_detections,
-    match_key,
-    normalize_text,
     select_frames_to_analyse,
     write_detections,
 )
 from schemas import BoundingBox, ScreenElement
+from ui_reference import match_key, normalize_text
 
 FRAME_INTERVAL = 0.5
 

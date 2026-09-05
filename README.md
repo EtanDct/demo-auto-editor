@@ -19,10 +19,18 @@ vidéo source
   -> FFmpeg (montage, overlays, sous-titres)
 ```
 
-En parallèle, une étape optionnelle `screen` indexe par OCR local le texte
-affiché à l'écran et à quel moment — première brique du montage automatique
-(synchroniser une incrustation avec le moment où le narrateur désigne un
-élément d'interface). Elle ne décide encore d'aucune incrustation.
+Deux briques préparent le montage automatique (synchroniser une incrustation
+avec le moment où le narrateur désigne un élément d'interface) :
+
+- l'étape optionnelle `screen` indexe par OCR local le texte affiché et à quel
+  moment (`data/screen_elements.json`) ;
+- l'étape `translate` fait déclarer au LLM, pour chaque segment, ce que le
+  narrateur désigne (`ui_reference`) : un élément **nommé** par son libellé,
+  une simple **position** ("en haut à gauche"), ou **rien**.
+
+Aucune des deux ne décide encore d'incrustation : l'appariement entre les deux
+reste à écrire. La distinction nommé / position est ce qui évite d'encadrer
+« Top repositories » parce que le narrateur a dit « en haut de la page ».
 
 ## Prérequis
 
