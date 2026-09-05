@@ -10,3 +10,7 @@ PyYAML==6.0.2
 typer==0.27.2
 numpy==1.26.4
 psutil==6.0.0
+
+# Développement : tests de la logique métier (recalage, sous-titres, filtres).
+#   python -m pytest tests
+pytest==8.3.3

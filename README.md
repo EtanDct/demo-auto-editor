@@ -77,6 +77,9 @@ python run.py --step render
 python run.py --step validate
 ```
 
+Les étapes lisent et écrivent les fichiers de `data/` : après correction d'un
+conducteur de montage à la main, il suffit de reprendre à `retime`.
+
 ## Organisation du dépôt
 
 ```
@@ -91,6 +94,42 @@ logs/        journaux d'exécution
 models/      poids des modèles téléchargés (non versionné)
 ```
 
+## Tests
+
+La logique métier pure (recalage temporel, découpage source, construction des
+filtres FFmpeg, sous-titres) est couverte par des tests qui n'invoquent ni
+FFmpeg ni les modèles :
+
+```bash
+python -m pytest
+```
+
 ## État du projet
 
-Toutes les étapes du pipeline (A à H) sont implémentées. La logique métier (recalage temporel, construction des filtres FFmpeg, sous-titres) a été testée avec des données synthétiques, mais aucun passage bout en bout n'a encore été fait avec une vraie vidéo, les modèles téléchargés et FFmpeg réellement invoqué — c'est la prochaine étape.
+Toutes les étapes du pipeline (A à H) sont implémentées et **un passage bout en
+bout a été fait sur un extrait réel** (2 min 47 s, 34 segments) : modèles
+téléchargés, FFmpeg réellement invoqué, `output/final.mp4` produit et validé
+par l'étape `validate`.
+
+Ce que ce passage a corrigé :
+
+- désynchronisation vidéo/audio sur source à débit d'images variable (`fps=`
+  forcé avant `tpad`) ;
+- gel de plan surdimensionné au recalage : l'extension était calculée sur la
+  durée brute de la narration alors que l'audio est joué accéléré (~6 s
+  d'image figée inutile sur 188 s) ;
+- `drawbox` recevait des variables `main_w` / `main_h` qui n'existent pas dans
+  ce filtre : le premier `visual_action` renseigné faisait échouer tout le
+  rendu.
+
+Ce qui reste à valider :
+
+- **incrustations visuelles** : `visual_action` est toujours à `null` en sortie
+  de l'étape `translate` et doit être renseigné à la main. Seul `highlight` a
+  été exercé sur du réel à ce jour ; `zoom`, `callout`, `popup` et
+  `cursor_emphasis` ne l'ont pas été. Les effets texte (`callout`, `popup`)
+  exigent `overlays.font_path` sous Windows.
+- **terminologie SAP** : le glossaire est vide et l'extrait de test ne porte pas
+  sur SAP — le cœur métier du projet n'a donc encore rien validé.
+- **découpage des phrases** : Whisper coupe au milieu des phrases et chaque
+  segment part au LLM isolément, ce qui produit des traductions fragmentées.
