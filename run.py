@@ -19,9 +19,18 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
 
-STEP_ORDER = ["inspect", "transcribe", "translate", "narrate", "retime", "render", "validate"]
+STEP_ORDER = [
+    "inspect", "transcribe", "translate", "narrate", "retime", "subtitles", "render", "validate",
+]
 
-NOT_YET_IMPLEMENTED = {"translate", "narrate", "retime", "render", "validate"}
+SIMPLE_STEPS = {
+    "transcribe": "transcribe",
+    "translate": "translate",
+    "narrate": "build_narration",
+    "retime": "build_timeline",
+    "subtitles": "subtitles",
+    "validate": "validate_output",
+}
 
 
 def _run_step(step: str, config_path: Path | None, input_override: Path | None) -> None:
@@ -31,15 +40,15 @@ def _run_step(step: str, config_path: Path | None, input_override: Path | None) 
         config = inspect_source.load_config(config_path)
         video_path = input_override or config.paths.resolve("input_video")
         inspect_source.inspect(video_path, config)
-    elif step == "transcribe":
-        import transcribe
+    elif step == "render":
+        import render_video
 
-        transcribe.main(config_path=config_path)
-    elif step in NOT_YET_IMPLEMENTED:
-        raise NotImplementedError(
-            f"L'étape '{step}' n'est pas encore implémentée. "
-            "Voir docs/plan-technique.md section 3 pour la suite du pipeline."
-        )
+        render_video.main(config_path=config_path, dry_run=False)
+    elif step in SIMPLE_STEPS:
+        import importlib
+
+        module = importlib.import_module(SIMPLE_STEPS[step])
+        module.main(config_path=config_path)
     else:
         raise typer.BadParameter(f"Étape inconnue : '{step}'. Attendu l'une de : {STEP_ORDER}")
 

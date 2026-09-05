@@ -49,6 +49,13 @@ retiming:
 subtitles:
   max_chars_per_line: 42
   max_lines: 2
+  font_path: null  # ex: "C:/Windows/Fonts/arial.ttf" ; null = police par défaut FFmpeg
+
+overlays:
+  font_path: null  # ex: "C:/Windows/Fonts/arialbd.ttf" ; requis pour callout/popup sous Windows
+  highlight_color: "yellow"
+  callout_color: "white"
+  line_width: 4
 
 export:
   container: mp4

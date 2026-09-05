@@ -82,6 +82,13 @@ class NarrationManifestEntry(BaseModel):
     voice: str
 
 
+class TranslationResult(BaseModel):
+    """Sortie JSON attendue du LLM local pour un segment (étape C)."""
+
+    text_en: str
+    sap_terms: list[str] = Field(default_factory=list)
+
+
 class GlossaryTerm(BaseModel):
     fr: str
     en: str
@@ -89,3 +96,22 @@ class GlossaryTerm(BaseModel):
 
 class Glossary(BaseModel):
     terms: list[GlossaryTerm] = Field(default_factory=list)
+
+
+class TimelineEntry(BaseModel):
+    """Une entrée retimée de `timeline.json` (étape E)."""
+
+    id: str
+    source_start: float
+    source_end: float
+    new_start: float
+    new_end: float
+    narration_duration: float
+    audio_speed_factor: float = 1.0
+    extended: bool = False
+    needs_review: bool = False
+
+
+class TimelineReport(BaseModel):
+    entries: list[TimelineEntry]
+    warnings: list[str] = Field(default_factory=list)

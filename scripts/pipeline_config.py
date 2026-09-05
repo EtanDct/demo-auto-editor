@@ -63,6 +63,14 @@ class RetimingConfig(BaseModel):
 class SubtitlesConfig(BaseModel):
     max_chars_per_line: int = 42
     max_lines: int = 2
+    font_path: str | None = None
+
+
+class OverlaysConfig(BaseModel):
+    font_path: str | None = None
+    highlight_color: str = "yellow"
+    callout_color: str = "white"
+    line_width: int = 4
 
 
 class ExportConfig(BaseModel):
@@ -83,6 +91,7 @@ class PipelineConfig(BaseModel):
     tts: TtsConfig
     retiming: RetimingConfig
     subtitles: SubtitlesConfig
+    overlays: OverlaysConfig
     export: ExportConfig
     glossary_file: str
 
