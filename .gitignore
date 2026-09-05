@@ -1,0 +1,38 @@
+# Media (heavy files, never committed)
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
+audio/*
+!audio/.gitkeep
+!audio/narration
+audio/narration/*
+!audio/narration/.gitkeep
+frames/*
+!frames/.gitkeep
+overlays/*
+!overlays/.gitkeep
+logs/*
+!logs/.gitkeep
+*.mp4
+*.mov
+*.wav
+*.srt
+*.vtt
+
+# Models (downloaded on demand, see scripts/download_models.py)
+models/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Env / secrets
+.env
+
+# OS
+.DS_Store
+Thumbs.db
