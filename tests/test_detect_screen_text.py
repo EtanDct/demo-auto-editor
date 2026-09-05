@@ -12,11 +12,13 @@ import pytest
 from detect_screen_text import (
     Detection,
     changed_pixel_ratio,
+    expand_to_frames,
     group_into_elements,
     is_usable_label,
     load_detections,
     match_key,
     normalize_text,
+    select_frames_to_analyse,
     write_detections,
 )
 from schemas import BoundingBox, ScreenElement
@@ -295,3 +297,81 @@ def test_les_espaces_manquants_de_l_ocr_ne_scindent_pas_l_element():
 
 def test_deux_libelles_reellement_differents_ne_fusionnent_pas():
     assert match_key("Pull requests") != match_key("Pull request")
+
+
+def _gray(value: int, changed_fraction: float = 0.0):
+    """Image de test : `changed_fraction` de la surface portée à 255."""
+    import numpy as np
+
+    img = np.full((100, 100), value, dtype=np.uint8)
+    rows = int(round(changed_fraction * 100))
+    if rows:
+        img[:rows, :] = 255
+    return img
+
+
+def test_seules_les_frames_qui_changent_sont_analysees():
+    frames = [_gray(0), _gray(0), _gray(0, 0.5), _gray(0, 0.5), _gray(0, 0.9)]
+
+    selected, threshold = select_frames_to_analyse(
+        len(frames), frames.__getitem__, pixel_delta=25, change_ratio=0.05, max_frames=100
+    )
+
+    assert selected == [0, 2, 4]
+    assert threshold == 0.05
+
+
+def test_la_premiere_frame_est_toujours_analysee():
+    frames = [_gray(0)] * 5
+
+    selected, _ = select_frames_to_analyse(
+        len(frames), frames.__getitem__, pixel_delta=25, change_ratio=0.05, max_frames=100
+    )
+
+    assert selected == [0]
+
+
+def test_un_defilement_lent_finit_par_declencher_un_ocr():
+    """Chaque pas est sous le seuil, mais l'écart cumulé à la dernière frame
+    analysée finit par le franchir : la comparaison ne doit donc pas porter sur
+    la frame précédente."""
+    frames = [_gray(0, f / 100) for f in range(0, 40, 4)]
+
+    selected, _ = select_frames_to_analyse(
+        len(frames), frames.__getitem__, pixel_delta=25, change_ratio=0.1, max_frames=100
+    )
+
+    assert len(selected) > 1
+
+
+def test_une_source_tres_animee_reste_sous_le_plafond_de_cout():
+    """Sans plafond, une vidéo au mouvement permanent enverrait toutes ses
+    frames à l'OCR : des dizaines de minutes au lieu de quelques-unes."""
+    frames = [_gray(0, (f % 2) * 0.9) for f in range(60)]
+
+    selected, threshold = select_frames_to_analyse(
+        len(frames), frames.__getitem__, pixel_delta=25, change_ratio=0.001, max_frames=10
+    )
+
+    assert len(selected) <= 10
+    assert threshold > 0.001  # le seuil a bien été relevé, pas la liste tronquée à l'aveugle
+
+
+def test_le_plafond_ne_penalise_pas_une_source_calme():
+    frames = [_gray(0), _gray(0, 0.5)]
+
+    selected, threshold = select_frames_to_analyse(
+        len(frames), frames.__getitem__, pixel_delta=25, change_ratio=0.05, max_frames=10
+    )
+
+    assert selected == [0, 1]
+    assert threshold == 0.05
+
+
+def test_les_frames_non_analysees_heritent_de_la_precedente():
+    analysed = [(0.0, [detection("Post", 0.1, 0.2, 0.0)]), (1.0, [detection("Draft", 0.3, 0.4, 1.0)])]
+
+    frames = expand_to_frames(analysed, frames_sampled=4, frame_interval=FRAME_INTERVAL)
+
+    assert [f[0].text for f in frames] == ["Post", "Post", "Draft", "Draft"]
+    assert [f[0].timestamp for f in frames] == [0.0, 0.5, 1.0, 1.5]

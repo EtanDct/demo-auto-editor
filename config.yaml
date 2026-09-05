@@ -30,6 +30,11 @@ screen_text:
   # pas sur l'écart moyen : les changements utiles sont localisés.
   change_pixel_delta: 25   # écart par pixel (0-255) au-delà duquel il a changé
   change_ratio: 0.0005     # 0.05 % des pixels ; plus bas = plus précis et plus lent
+  # Plafond de coût : sur une source au mouvement permanent (lecteur vidéo,
+  # animation, webcam incrustée) toutes les frames franchiraient le seuil. Le
+  # seuil est alors relevé automatiquement pour tenir sous ce plafond, ce qui
+  # borne la durée de l'étape (~5 s d'OCR par frame) quel que soit le contenu.
+  max_ocr_frames: 200
   merge_iou: 0.6           # recouvrement minimal pour considérer deux détections
                            # de frames différentes comme le même élément
   max_gap_seconds: 1.0     # au-delà, un élément revu est un nouvel élément

@@ -304,16 +304,80 @@ def load_detections(path: Path, frame_interval: float) -> tuple[list[list[Detect
         )
         for entry in payload["analysed"]
     ]
+    return expand_to_frames(analysed, payload["frames_sampled"], frame_interval), len(analysed)
 
+
+def expand_to_frames(
+    analysed: list[tuple[float, list[Detection]]], frames_sampled: int, frame_interval: float
+) -> list[list[Detection]]:
+    """Réétend les frames analysées sur toutes les frames échantillonnées.
+
+    Chaque frame non analysée hérite de la dernière analysée qui la précède :
+    par construction, l'écran n'y a pas assez changé pour valoir un OCR.
+    """
     frames: list[list[Detection]] = []
     cursor = -1
-    for i in range(payload["frames_sampled"]):
+    for i in range(frames_sampled):
         timestamp = round(i * frame_interval, 3)
         while cursor + 1 < len(analysed) and analysed[cursor + 1][0] <= timestamp + 1e-9:
             cursor += 1
         source = analysed[cursor][1] if cursor >= 0 else []
         frames.append([Detection(d.text, d.box, d.confidence, timestamp) for d in source])
-    return frames, len(analysed)
+    return frames
+
+
+def select_frames_to_analyse(
+    frame_count: int,
+    load_gray,
+    pixel_delta: int,
+    change_ratio: float,
+    max_frames: int,
+) -> tuple[list[int], float]:
+    """Choisit les frames à passer à l'OCR, sous un plafond de coût.
+
+    Le seuil `change_ratio` par défaut est calibré sur une capture d'écran
+    ordinaire, très statique. Une source au mouvement permanent (lecteur vidéo,
+    animation, incrustation webcam, indicateur de chargement) ferait franchir le
+    seuil à *toutes* les frames et l'étape durerait des dizaines de minutes.
+
+    On relève donc le seuil jusqu'à tenir sous `max_frames`, ce qui borne la
+    durée de l'étape quel que soit le contenu : on analyse toujours les
+    changements les plus francs, seuls les plus ténus sont sacrifiés. Le seuil
+    effectivement retenu est renvoyé pour être journalisé — s'il a été relevé,
+    c'est le signe que la vidéo mérite un réglage explicite.
+    """
+    threshold = change_ratio
+    selected = _greedy_selection(frame_count, load_gray, pixel_delta, threshold)
+
+    while len(selected) > max_frames and threshold < 1.0:
+        threshold *= 2
+        selected = _greedy_selection(frame_count, load_gray, pixel_delta, threshold)
+        logger.warning(
+            "Trop de frames à analyser pour le plafond de %d : seuil de changement "
+            "relevé à %.5f (%d frames retenues). Source plus animée qu'une capture "
+            "d'écran classique ; ajuste screen_text.change_ratio si le résultat est "
+            "trop grossier.",
+            max_frames, threshold, len(selected),
+        )
+
+    return selected[:max_frames], threshold
+
+
+def _greedy_selection(frame_count: int, load_gray, pixel_delta: int, threshold: float) -> list[int]:
+    """Frames dont l'écran s'écarte assez de la dernière frame retenue.
+
+    La comparaison porte sur la dernière frame *retenue*, pas sur la précédente :
+    un défilement lent finit ainsi par déclencher un nouvel OCR, alors qu'il
+    resterait indéfiniment sous le seuil frame à frame.
+    """
+    selected: list[int] = []
+    reference = None
+    for i in range(frame_count):
+        gray = load_gray(i)
+        if reference is None or changed_pixel_ratio(reference, gray, pixel_delta) >= threshold:
+            selected.append(i)
+            reference = gray
+    return selected
 
 
 def detect(config: PipelineConfig, max_seconds: float | None = None) -> ScreenTextIndex:
@@ -334,49 +398,38 @@ def detect(config: PipelineConfig, max_seconds: float | None = None) -> ScreenTe
     frame_paths = extract_sample_frames(video_path, samples_dir, settings.sample_fps, max_seconds)
     logger.info("%d frames échantillonnées dans %s", len(frame_paths), samples_dir)
 
-    ocr = RapidOCR()
-    frames: list[list[Detection]] = []
-    analysed_frames: list[tuple[float, list[Detection]]] = []
-    previous_gray = None
-    last_detections: list[Detection] = []
-    analysed = 0
+    def load_gray(index: int):
+        return cv2.imread(str(frame_paths[index]), cv2.IMREAD_GRAYSCALE)
 
-    for i, frame_path in enumerate(frame_paths):
-        timestamp = round(i * frame_interval, 3)
-        gray = cv2.imread(str(frame_path), cv2.IMREAD_GRAYSCALE)
-
-        # Comparaison à la dernière frame *analysée*, pas à la précédente : un
-        # défilement lent finit ainsi par déclencher un nouvel OCR, alors qu'il
-        # resterait sous le seuil frame à frame.
-        changed = previous_gray is None or (
-            changed_pixel_ratio(previous_gray, gray, settings.change_pixel_delta)
-            >= settings.change_ratio
-        )
-        if changed:
-            last_detections = ocr_frame(
-                ocr, frame_path, width, height, settings.min_confidence, settings.min_text_length
-            )
-            previous_gray = gray
-            analysed += 1
-            analysed_frames.append((timestamp, list(last_detections)))
-            if analysed % 10 == 0:
-                logger.info(
-                    "  %d/%d frames (%d passées à l'OCR), t=%.1fs",
-                    i + 1, len(frame_paths), analysed, timestamp,
-                )
-
-        frames.append([
-            Detection(d.text, d.box, d.confidence, timestamp) for d in last_detections
-        ])
-
-    logger.info(
-        "OCR sur %d frames / %d échantillonnées (%.0f%% évitées car écran inchangé)",
-        analysed, len(frame_paths),
-        100 * (1 - analysed / len(frame_paths)) if frame_paths else 0,
+    selected, threshold = select_frames_to_analyse(
+        len(frame_paths),
+        load_gray,
+        settings.change_pixel_delta,
+        settings.change_ratio,
+        settings.max_ocr_frames,
     )
+    logger.info(
+        "%d frames à passer à l'OCR / %d échantillonnées (%.0f%% évitées, seuil %.5f)",
+        len(selected), len(frame_paths),
+        100 * (1 - len(selected) / len(frame_paths)) if frame_paths else 0,
+        threshold,
+    )
+
+    ocr = RapidOCR()
+    analysed_frames: list[tuple[float, list[Detection]]] = []
+    for position, index in enumerate(selected, start=1):
+        timestamp = round(index * frame_interval, 3)
+        detections = ocr_frame(
+            ocr, frame_paths[index], width, height, settings.min_confidence, settings.min_text_length
+        )
+        analysed_frames.append((timestamp, detections))
+        if position % 10 == 0:
+            logger.info("  OCR %d/%d (t=%.1fs)", position, len(selected), timestamp)
 
     write_detections(analysed_frames, len(frame_paths), data_dir / "screen_detections.json")
 
+    frames = expand_to_frames(analysed_frames, len(frame_paths), frame_interval)
+    analysed = len(analysed_frames)
     elements = group_into_elements(
         frames, settings.merge_iou, settings.max_gap_seconds, frame_interval
     )

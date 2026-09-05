@@ -38,6 +38,7 @@ class ScreenTextConfig(BaseModel):
     min_text_length: int = 2
     change_pixel_delta: int = 25
     change_ratio: float = 0.0005
+    max_ocr_frames: int = 200
     merge_iou: float = 0.6
     max_gap_seconds: float = 1.0
 
