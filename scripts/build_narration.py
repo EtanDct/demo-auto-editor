@@ -1,7 +1,8 @@
 """Étape D : voix off IA locale (plan-technique.md, section 3).
 
-Synthétise chaque `text_en` du conducteur de montage avec Piper (local, pas
-d'appel réseau) et écrit un fichier WAV par segment, plus
+Synthétise chaque `text_en` du conducteur de montage avec le binaire Piper
+(local, pas d'appel réseau ; voir scripts/download_models.py pour son
+installation) et écrit un fichier WAV par segment, plus
 data/narration_manifest.json avec la durée réelle de chaque segment.
 
 Les pauses (`narration.pause_before_ms` / `pause_after_ms`) ne sont pas
@@ -14,13 +15,14 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import wave
 from pathlib import Path
 
 import typer
 import yaml
 
-from download_models import parse_piper_voice
+from download_models import parse_piper_voice, piper_executable_path
 from pipeline_config import PipelineConfig, load_config
 from schemas import EditDecision, NarrationManifestEntry
 
@@ -38,11 +40,9 @@ def load_edl(path: Path) -> list[EditDecision]:
     return [EditDecision.model_validate(item) for item in raw]
 
 
-def load_voice(config: PipelineConfig):
-    from piper import PiperVoice  # import tardif : coûteux, inutile pour --help
-
+def resolve_voice_model_path(config: PipelineConfig) -> Path:
     lang_family, lang_code, speaker, quality = parse_piper_voice(config.tts.voice)
-    model_path = (
+    return (
         config.paths.resolve("models_dir")
         / "piper"
         / lang_family
@@ -51,32 +51,41 @@ def load_voice(config: PipelineConfig):
         / quality
         / f"{config.tts.voice}.onnx"
     )
+
+
+def synthesize_segment(piper_exe: Path, model_path: Path, text: str, out_path: Path) -> float:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [str(piper_exe), "-m", str(model_path), "--output_file", str(out_path)],
+        input=text,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    with wave.open(str(out_path), "rb") as wav_file:
+        return round(wav_file.getnframes() / wav_file.getframerate(), 3)
+
+
+def build_narration(decisions: list[EditDecision], config: PipelineConfig) -> list[NarrationManifestEntry]:
+    piper_exe = piper_executable_path(config.paths.resolve("models_dir"))
+    if not piper_exe.exists():
+        raise FileNotFoundError(
+            f"Binaire Piper introuvable : {piper_exe}. Lance d'abord "
+            "'python scripts/download_models.py --only tts'."
+        )
+    model_path = resolve_voice_model_path(config)
     if not model_path.exists():
         raise FileNotFoundError(
             f"Voix Piper introuvable : {model_path}. Lance d'abord "
             "'python scripts/download_models.py --only tts'."
         )
-    logger.info("Chargement de la voix Piper %s", config.tts.voice)
-    return PiperVoice.load(str(model_path))
 
-
-def synthesize_segment(voice, text: str, out_path: Path) -> float:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(out_path), "wb") as wav_file:
-        voice.synthesize(text, wav_file)
-        frame_rate = wav_file.getframerate()
-        n_frames = wav_file.getnframes()
-    return round(n_frames / frame_rate, 3)
-
-
-def build_narration(decisions: list[EditDecision], config: PipelineConfig) -> list[NarrationManifestEntry]:
-    voice = load_voice(config)
     narration_dir = config.paths.resolve("audio_dir") / "narration"
     entries = []
     for decision in decisions:
         out_path = narration_dir / f"{decision.id}.wav"
         logger.info("Synthèse de %s -> %s", decision.id, out_path)
-        duration = synthesize_segment(voice, decision.text_en, out_path)
+        duration = synthesize_segment(piper_exe, model_path, decision.text_en, out_path)
         entries.append(
             NarrationManifestEntry(
                 segment_id=decision.id,

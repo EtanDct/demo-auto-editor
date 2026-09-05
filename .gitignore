@@ -20,6 +20,13 @@ logs/*
 *.srt
 *.vtt
 
+# data/ : uniquement le glossaire est du contenu source ; le reste
+# (transcript, conducteur de montage, timeline, sous-titres...) est généré
+# par le pipeline à partir d'une vidéo donnée.
+data/*
+!data/.gitkeep
+!data/glossary.yaml
+
 # Models (downloaded on demand, see scripts/download_models.py)
 models/
 

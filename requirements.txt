@@ -1,7 +1,10 @@
+# Piper (TTS) n'est pas dans ce fichier : piper-tts (PyPI) dépend de
+# piper-phonemize, qui n'a pas de wheel Windows. scripts/download_models.py
+# télécharge à la place le binaire officiel (rhasspy/piper releases),
+# invoqué en CLI par scripts/build_narration.py.
 faster-whisper==1.0.3
 huggingface_hub==0.25.2
 llama-cpp-python==0.3.2
-piper-tts==1.2.0
 pydantic==2.9.2
 PyYAML==6.0.2
 typer==0.12.5
