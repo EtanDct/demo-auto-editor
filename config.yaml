@@ -20,6 +20,20 @@ hardware:
 inspection:
   thumbnail_interval_seconds: 2.0
 
+screen_text:
+  # Index du texte affiché à l'écran (étape `screen`), base du montage automatique.
+  sample_fps: 2.0          # échantillonnage temporel de la vidéo
+  min_confidence: 0.6      # en dessous, la détection OCR est ignorée
+  min_text_length: 2       # écarte le bruit d'OCR sur les icônes (symboles isolés)
+  # L'OCR n'est relancé que si l'écran a bougé, sinon la frame hérite des
+  # détections précédentes. Le seuil porte sur la PROPORTION de pixels touchés,
+  # pas sur l'écart moyen : les changements utiles sont localisés.
+  change_pixel_delta: 25   # écart par pixel (0-255) au-delà duquel il a changé
+  change_ratio: 0.0005     # 0.05 % des pixels ; plus bas = plus précis et plus lent
+  merge_iou: 0.6           # recouvrement minimal pour considérer deux détections
+                           # de frames différentes comme le même élément
+  max_gap_seconds: 1.0     # au-delà, un élément revu est un nouvel élément
+
 whisper:
   # tiny (tests rapides) / small (défaut) / medium (précision accrue)
   model_repo: Systran/faster-whisper-small

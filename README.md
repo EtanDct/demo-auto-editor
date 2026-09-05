@@ -19,6 +19,11 @@ vidéo source
   -> FFmpeg (montage, overlays, sous-titres)
 ```
 
+En parallèle, une étape optionnelle `screen` indexe par OCR local le texte
+affiché à l'écran et à quel moment — première brique du montage automatique
+(synchroniser une incrustation avec le moment où le narrateur désigne un
+élément d'interface). Elle ne décide encore d'aucune incrustation.
+
 ## Prérequis
 
 - **FFmpeg / FFprobe** (moteur de montage, extraction audio, ffprobe pour les métadonnées)
@@ -75,6 +80,11 @@ python run.py --step retime
 python run.py --step subtitles
 python run.py --step render
 python run.py --step validate
+
+# Hors pipeline par défaut : index OCR du texte à l'écran (plusieurs minutes)
+python run.py --step screen
+python scripts/detect_screen_text.py --max-seconds 40   # essai sur une tranche
+python scripts/detect_screen_text.py --regroup          # re-règle sans relancer l'OCR
 ```
 
 Les étapes lisent et écrivent les fichiers de `data/` : après correction d'un
@@ -84,7 +94,8 @@ conducteur de montage à la main, il suffit de reprendre à `retime`.
 
 ```
 input/       vidéo source (non versionnée)
-data/        métadonnées, transcription, conducteur de montage, sous-titres
+data/        métadonnées, transcription, conducteur de montage, sous-titres,
+             index du texte à l'écran
 audio/       audio source et narration générée (non versionné)
 frames/      vignettes extraites (non versionné)
 overlays/    assets d'incrustation (zoom, highlight, callout...)
@@ -124,6 +135,12 @@ Ce que ce passage a corrigé :
 
 Ce qui reste à valider :
 
+- **montage automatique** : l'étape `screen` produit l'inventaire du texte
+  affiché (`data/screen_elements.json`), mais rien ne le consomme encore.
+  L'appariement entre ce que dit le narrateur et ce que montre l'écran reste à
+  écrire, avec ses règles de rejet — sur l'extrait de référence, 40 % des
+  libellés apparaissent à plusieurs endroits et 108 éléments sont visibles par
+  segment en moyenne, donc un appariement naïf produirait surtout des erreurs.
 - **incrustations visuelles** : `visual_action` est toujours à `null` en sortie
   de l'étape `translate` et doit être renseigné à la main. Seul `highlight` a
   été exercé sur du réel à ce jour ; `zoom`, `callout`, `popup` et

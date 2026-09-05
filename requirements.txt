@@ -11,6 +11,11 @@ typer==0.27.2
 numpy==1.26.4
 psutil==6.0.0
 
+# OCR local pour l'étape `screen` (index du texte affiché à l'écran).
+# rapidocr-onnxruntime tire onnxruntime et opencv-python ; aucun binaire
+# système à installer, et aucun appel réseau une fois les modèles en cache.
+rapidocr-onnxruntime==1.4.4
+
 # Développement : tests de la logique métier (recalage, sous-titres, filtres).
 #   python -m pytest tests
 pytest==8.3.3

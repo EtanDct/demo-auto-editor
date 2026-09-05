@@ -32,6 +32,16 @@ class InspectionConfig(BaseModel):
     thumbnail_interval_seconds: float = 2.0
 
 
+class ScreenTextConfig(BaseModel):
+    sample_fps: float = 2.0
+    min_confidence: float = 0.6
+    min_text_length: int = 2
+    change_pixel_delta: int = 25
+    change_ratio: float = 0.0005
+    merge_iou: float = 0.6
+    max_gap_seconds: float = 1.0
+
+
 class WhisperConfig(BaseModel):
     model_config = {"protected_namespaces": ()}
 
@@ -88,6 +98,7 @@ class PipelineConfig(BaseModel):
     paths: PathsConfig
     hardware: HardwareConfig
     inspection: InspectionConfig
+    screen_text: ScreenTextConfig
     whisper: WhisperConfig
     llm: LlmConfig
     tts: TtsConfig

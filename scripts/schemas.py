@@ -115,3 +115,77 @@ class TimelineEntry(BaseModel):
 class TimelineReport(BaseModel):
     entries: list[TimelineEntry]
     warnings: list[str] = Field(default_factory=list)
+
+
+class BoundingBox(BaseModel):
+    """Rectangle normalisé entre 0 et 1, relatif à l'image.
+
+    Même convention que `VisualAction` : indépendant de la résolution, donc
+    directement transposable en expressions FFmpeg à l'étape de rendu.
+    """
+
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+    @property
+    def center(self) -> tuple[float, float]:
+        return self.x + self.width / 2, self.y + self.height / 2
+
+    def iou(self, other: "BoundingBox") -> float:
+        """Intersection sur union : sert à décider si deux détections OCR de
+        frames différentes désignent le même élément d'interface."""
+        left = max(self.x, other.x)
+        top = max(self.y, other.y)
+        right = min(self.x + self.width, other.x + other.width)
+        bottom = min(self.y + self.height, other.y + other.height)
+        if right <= left or bottom <= top:
+            return 0.0
+        intersection = (right - left) * (bottom - top)
+        return intersection / (self.area + other.area - intersection)
+
+
+class ScreenElement(BaseModel):
+    """Un élément de texte stable à l'écran, agrégé sur plusieurs frames.
+
+    Produit par l'étape `screen` : c'est l'inventaire de ce qui est affiché et
+    quand, sur lequel s'appuiera l'appariement entre ce que dit le narrateur et
+    ce que montre l'écran.
+    """
+
+    id: str
+    text: str
+    box: BoundingBox
+    first_seen: float = Field(ge=0)
+    last_seen: float
+    confidence: float = Field(ge=0, le=1)
+    occurrences: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def check_order(self) -> "ScreenElement":
+        if self.last_seen < self.first_seen:
+            raise ValueError(
+                f"{self.id}: last_seen ({self.last_seen}) précède first_seen ({self.first_seen})"
+            )
+        return self
+
+    def visible_at(self, start: float, end: float) -> float:
+        """Fraction de l'intervalle [start, end] pendant laquelle l'élément est affiché."""
+        if end <= start:
+            return 0.0
+        overlap = min(self.last_seen, end) - max(self.first_seen, start)
+        return max(0.0, overlap) / (end - start)
+
+
+class ScreenTextIndex(BaseModel):
+    """Sortie de l'étape `screen` : `data/screen_elements.json`."""
+
+    sample_fps: float
+    frames_sampled: int
+    frames_analysed: int  # frames réellement passées à l'OCR (les autres sont inchangées)
+    elements: list[ScreenElement] = Field(default_factory=list)
