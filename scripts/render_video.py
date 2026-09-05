@@ -35,9 +35,18 @@ import typer
 
 from build_narration import load_edl
 from build_timeline import load_narration_manifest
+from cursor_overlays import cursor_filter_for
+from detect_cursor import load_track
+from match_overlays import load_screen_index
 from overlays import overlay_filter_for
 from pipeline_config import PipelineConfig, load_config
-from schemas import EditDecision, NarrationManifestEntry, TimelineEntry
+from schemas import (
+    CursorTrack,
+    EditDecision,
+    NarrationManifestEntry,
+    ScreenElement,
+    TimelineEntry,
+)
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
@@ -104,7 +113,14 @@ def _escape_filter_path(path: Path) -> str:
 
 
 def build_video_filter(
-    pieces: list[Piece], config: PipelineConfig, width: int, height: int, srt_path: Path, fps: float
+    pieces: list[Piece],
+    config: PipelineConfig,
+    width: int,
+    height: int,
+    srt_path: Path,
+    fps: float,
+    cursor_track: CursorTrack | None = None,
+    screen_elements: list[ScreenElement] | None = None,
 ) -> tuple[str, str]:
     chains = []
     labels = []
@@ -128,6 +144,15 @@ def build_video_filter(
             )
         if overlay:
             base = f"{base},{overlay}"
+
+        # Incrustations pilotées par la souris : elles s'appliquent aussi aux
+        # intervalles sans narration, où il se passe pourtant quelque chose à
+        # l'écran.
+        cursor_overlay = cursor_filter_for(
+            cursor_track, screen_elements or [], piece.start, piece.end, config
+        )
+        if cursor_overlay:
+            base = f"{base},{cursor_overlay}"
 
         if piece.kind == "segment" and piece.extension > 0:
             # tpad clone la dernière frame DÉCODÉE de son entrée : appliqué
@@ -214,7 +239,20 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
 
     pieces = build_pieces(decisions, timeline_entries, source_duration)
     total_duration = total_output_duration(pieces)
-    video_filter, video_label = build_video_filter(pieces, config, width, height, srt_path, inspection["fps"])
+    cursor_path = data_dir / "cursor_track.json"
+    cursor_track = load_track(cursor_path) if cursor_path.exists() else None
+    screen_path = data_dir / "screen_elements.json"
+    screen_elements = load_screen_index(screen_path).elements if screen_path.exists() else []
+    if cursor_track is None and config.cursor_overlay.enabled:
+        logger.info(
+            "Pas de trajectoire du pointeur (%s) : aucune incrustation pilotée par la "
+            "souris. Lance 'python run.py --step cursor'.",
+            cursor_path,
+        )
+
+    video_filter, video_label = build_video_filter(
+        pieces, config, width, height, srt_path, inspection["fps"], cursor_track, screen_elements
+    )
     audio_filter, audio_files, audio_label = build_audio_filter(
         decisions,
         timeline_by_id,
@@ -227,11 +265,20 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
     final_path = output_dir / "final.mp4"
     preview_path = output_dir / "preview.mp4"
 
+    # Le graphe de filtres passe par un fichier : les incrustations pilotées par
+    # la souris en produisent des centaines, et la ligne de commande dépasse
+    # alors la limite de Windows ("Nom de fichier ou extension trop long").
+    # La syntaxe est `-/option fichier` (FFmpeg 7.1+) ; `-filter_complex_script`
+    # a été supprimé dans FFmpeg 9.
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    filter_script = logs_dir / "filter_complex.txt"
+    filter_script.write_text(f"{video_filter};{audio_filter}", encoding="utf-8")
+
     cmd = ["ffmpeg", "-y", "-i", str(source_video)]
     for f in audio_files:
         cmd += ["-i", str(config.paths.resolve("audio_dir").parent / f)]
     cmd += [
-        "-filter_complex", f"{video_filter};{audio_filter}",
+        "-/filter_complex", str(filter_script),
         "-map", video_label,
         "-map", audio_label,
         "-c:v", config.export.video_codec,
@@ -242,7 +289,6 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
         str(final_path),
     ]
 
-    logs_dir.mkdir(parents=True, exist_ok=True)
     command_log = logs_dir / "render_command.txt"
     command_log.write_text(" ".join(f'"{c}"' if " " in c else c for c in cmd), encoding="utf-8")
     logger.info("Commande FFmpeg écrite dans %s", command_log)

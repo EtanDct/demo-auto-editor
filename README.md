@@ -51,6 +51,13 @@ Une incrustation retenue ne couvre que la portion du segment où l'élément est
 effectivement affiché (`start_offset` / `end_offset` de `visual_action`), avec
 un fondu d'entrée et de sortie.
 
+**Les incrustations pilotées par la souris** (`cursor_overlay` dans
+`config.yaml`) ne passent pas par l'appariement du tout : un marqueur suit le
+pointeur, et le libellé sur lequel la souris se pose est encadré. Comme rien
+n'y dépend du texte prononcé, elles fonctionnent quelle que soit la langue de
+l'interface et quoi que dise le narrateur — c'est la voie qui produit
+effectivement des incrustations aujourd'hui.
+
 ## Prérequis
 
 - **FFmpeg / FFprobe** (moteur de montage, extraction audio, ffprobe pour les métadonnées)

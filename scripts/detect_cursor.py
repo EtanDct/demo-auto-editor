@@ -36,12 +36,14 @@ from pathlib import Path
 
 import typer
 
-from detect_screen_text import SAMPLES_SUBDIR, extract_sample_frames, load_inspection_report
+from detect_screen_text import extract_sample_frames, load_inspection_report
 from pipeline_config import PipelineConfig, load_config
 from schemas import CursorSample, CursorTrack
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
+
+SAMPLES_SUBDIR = "cursor"
 
 
 def _moving_blobs(previous_gray, current_gray, pixel_delta: int, min_area: int, max_area: int):
@@ -135,14 +137,13 @@ def detect(config: PipelineConfig) -> CursorTrack:
     inspection = load_inspection_report(data_dir / "inspection_report.json")
     video_path = Path(inspection["video_path"])
     samples_dir = config.paths.resolve("frames_dir") / SAMPLES_SUBDIR
-    frame_interval = 1.0 / config.screen_text.sample_fps
+    frame_interval = 1.0 / config.cursor.sample_fps
 
-    frame_paths = sorted(samples_dir.glob("sample_*.jpg"))
-    if not frame_paths:
-        logger.info("Aucune frame échantillonnée, extraction depuis %s", video_path)
-        frame_paths = extract_sample_frames(
-            video_path, samples_dir, config.screen_text.sample_fps
-        )
+    logger.info(
+        "Échantillonnage de %s à %s im/s pour le suivi du pointeur",
+        video_path, config.cursor.sample_fps,
+    )
+    frame_paths = extract_sample_frames(video_path, samples_dir, config.cursor.sample_fps)
 
     def load_gray(index: int):
         return cv2.imread(str(frame_paths[index]), cv2.IMREAD_GRAYSCALE)
@@ -153,7 +154,7 @@ def detect(config: PipelineConfig) -> CursorTrack:
         len(samples), len(frame_paths),
         100 * len(samples) / len(frame_paths) if frame_paths else 0,
     )
-    return CursorTrack(sample_fps=config.screen_text.sample_fps, samples=samples)
+    return CursorTrack(sample_fps=config.cursor.sample_fps, samples=samples)
 
 
 def write_track(track: CursorTrack, out_path: Path) -> None:

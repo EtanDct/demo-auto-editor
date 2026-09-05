@@ -93,7 +93,7 @@ def _is_always_on(window: tuple[float, float | None], segment_duration: float | 
     return start <= 0 and (end is None or (segment_duration is not None and end >= segment_duration))
 
 
-def _enable(start: float, end: float | None) -> str:
+def enable_clause(start: float, end: float | None) -> str:
     if end is None:
         return f":enable='gte(t,{start:.3f})'" if start > 0 else ""
     return f":enable='between(t,{start:.3f},{end:.3f})'"
@@ -112,12 +112,11 @@ def _box(va: VisualAction, config: PipelineConfig, alpha: float, start: float, e
         f"drawbox=x=(iw*{va.x}):y=(ih*{va.y}):"
         f"w=(iw*{va.width}):h=(ih*{va.height}):"
         f"color={config.overlays.highlight_color}@{alpha:.3f}:"
-        f"t={config.overlays.line_width}{_enable(start, end)}"
+        f"t={config.overlays.line_width}{enable_clause(start, end)}"
     )
 
 
-def _stepped_fade_boxes(
-    va: VisualAction,
+def stepped_fade(
     config: PipelineConfig,
     window: tuple[float, float | None],
     peak: float,
@@ -184,13 +183,13 @@ def _text(
         f"fontsize={font_size}:fontcolor={config.overlays.callout_color}:"
         f"x={x_expr}:y={y_expr}:"
         f"box=1:boxcolor=black@{box_opacity}:boxborderw=8:"
-        f"alpha={alpha}{_enable(start, end)}"
+        f"alpha={alpha}{enable_clause(start, end)}"
     )
 
 
 def _highlight_box(va: VisualAction, config: PipelineConfig, window) -> str:
-    return _stepped_fade_boxes(
-        va, config, window, BOX_PEAK_ALPHA, lambda a, s, e: _box(va, config, a, s, e)
+    return stepped_fade(
+        config, window, BOX_PEAK_ALPHA, lambda a, s, e: _box(va, config, a, s, e)
     )
 
 
@@ -216,10 +215,10 @@ def _cursor_emphasis(va: VisualAction, config: PipelineConfig, window) -> str:
     def draw(alpha: float, start: float, end: float | None) -> str:
         return (
             f"drawbox=x=(iw*{va.x}-15):y=(ih*{va.y}-15):w=30:h=30:"
-            f"color={config.overlays.highlight_color}@{alpha:.3f}:t=3{_enable(start, end)}"
+            f"color={config.overlays.highlight_color}@{alpha:.3f}:t=3{enable_clause(start, end)}"
         )
 
-    return _stepped_fade_boxes(va, config, window, BOX_PEAK_ALPHA, draw)
+    return stepped_fade(config, window, BOX_PEAK_ALPHA, draw)
 
 
 def _zoom(va: VisualAction, config: PipelineConfig, window, width: int, height: int) -> str:

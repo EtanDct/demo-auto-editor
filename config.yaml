@@ -74,11 +74,53 @@ cursor:
   # Suivi du pointeur (étape `cursor`), second signal du montage automatique.
   # Aucun gabarit de curseur : on cherche une petite zone qui se déplace, ce qui
   # reste vrai quels que soient la forme du pointeur, le thème et la résolution.
+  # Échantillonnage propre, bien plus fin que celui de l'OCR : une souris se
+  # déplace en continu, et un marqueur qui la suit par sauts d'une demi-seconde
+  # saute à l'écran. Aucun OCR ici, seulement des écarts d'images (~12 ms).
+  sample_fps: 8.0
   pixel_delta: 25              # écart par pixel au-delà duquel il a changé
   min_area_fraction: 0.00002   # ~40 px sur du 1920x1020 : plus petit = bruit
   max_area_fraction: 0.002     # ~4000 px : plus grand = ce n'est pas un pointeur
   match_tolerance_fraction: 0.01  # tolérance d'appariement entre deux écarts
   hold_seconds: 2.0            # durée pendant laquelle une position reste valable
+
+cursor_overlay:
+  # Incrustations pilotées par la souris. Contrairement à `overlay_matching`,
+  # elles ne dépendent d'aucune correspondance de texte : ce qui est montré est
+  # déduit de ce que fait le pointeur, donc valable quelle que soit la langue de
+  # l'interface et quoi que dise le narrateur.
+  enabled: true
+
+  # La détection ne voit le pointeur que lorsqu'il bouge : un silence signifie
+  # qu'il est resté en place, pas qu'on l'a perdu. Sa dernière position tient
+  # donc jusqu'au relevé suivant, dans cette limite (au-delà, la souris a pu
+  # quitter la fenêtre sans qu'on le sache).
+  max_hold_seconds: 6.0
+  hover_step_seconds: 0.125  # pas de la grille où l'on cherche les survols
+
+  # Marqueur qui suit le pointeur. Il vise à attirer l'œil, pas à pointer au
+  # pixel : la détection situe le centre de la tache en mouvement, alors que le
+  # point actif d'une flèche est sa pointe, d'où une trentaine de pixels
+  # d'écart. Le marqueur est dimensionné pour englober le curseur malgré ça.
+  follow_enabled: true
+  marker_size: 0.055        # côté du cadre, en fraction de l'image
+  marker_color: "cyan"
+  marker_opacity: 0.7
+  marker_thickness: 2
+
+  # Cadre sur le libellé que la souris survole.
+  hover_enabled: true
+  hover_max_distance: 0.012 # le pointeur doit être sur le libellé, pas à côté
+  hover_max_box_area: 0.05  # au-delà, l'OCR a capturé un bloc, pas un contrôle
+  hover_max_box_width: 0.22 # un contrôle est étroit ; au-delà c'est une phrase
+  hover_max_chars: 30       # idem, mesuré sur le libellé lu
+  min_hover_seconds: 0.35   # un survol plus bref = la souris ne fait que passer
+  hover_join_seconds: 0.5   # tolérance de trou pour prolonger un même survol
+  hover_tail_seconds: 0.4   # le cadre survit un instant au départ de la souris
+  hover_padding: 0.004      # marge autour du libellé
+  hover_color: "yellow"
+  hover_opacity: 0.9
+  hover_thickness: 4
 
 overlay_matching:
   # Appariement entre ce que le narrateur nomme (ui_reference) et ce que l'OCR

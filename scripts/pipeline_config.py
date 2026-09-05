@@ -80,11 +80,35 @@ class SubtitlesConfig(BaseModel):
 
 
 class CursorConfig(BaseModel):
+    sample_fps: float = 8.0
     pixel_delta: int = 25
     min_area_fraction: float = 0.00002
     max_area_fraction: float = 0.002
     match_tolerance_fraction: float = 0.01
     hold_seconds: float = 2.0
+
+
+class CursorOverlayConfig(BaseModel):
+    enabled: bool = True
+    max_hold_seconds: float = 6.0
+    hover_step_seconds: float = 0.125
+    follow_enabled: bool = True
+    marker_size: float = 0.055
+    marker_color: str = "cyan"
+    marker_opacity: float = 0.7
+    marker_thickness: int = 2
+    hover_enabled: bool = True
+    hover_max_distance: float = 0.012
+    hover_max_box_area: float = 0.05
+    hover_max_box_width: float = 0.22
+    hover_max_chars: int = 30
+    min_hover_seconds: float = 0.35
+    hover_join_seconds: float = 0.5
+    hover_tail_seconds: float = 0.4
+    hover_padding: float = 0.004
+    hover_color: str = "yellow"
+    hover_opacity: float = 0.9
+    hover_thickness: int = 4
 
 
 class OverlayMatchingConfig(BaseModel):
@@ -127,6 +151,7 @@ class PipelineConfig(BaseModel):
     retiming: RetimingConfig
     subtitles: SubtitlesConfig
     cursor: CursorConfig
+    cursor_overlay: CursorOverlayConfig
     overlay_matching: OverlayMatchingConfig
     overlays: OverlaysConfig
     export: ExportConfig
