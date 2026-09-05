@@ -14,10 +14,13 @@ Construit un unique filter_complex FFmpeg qui :
 5. exporte `output/final.mp4` (qualité maître) puis `output/preview.mp4`
    (basse résolution, second passage FFmpeg sur le master).
 
-NOTE : ce module n'a pas encore été validé sur une vidéo réelle (aucun
-extrait de démo fourni au moment de l'écriture). Utiliser `--dry-run` pour
-inspecter la commande FFmpeg générée dans logs/render_command.txt avant
-exécution sur un premier extrait court.
+Validé sur un premier extrait réel (2m47s, 33 segments, 17 gels de plan) :
+le rendu s'est terminé sans erreur FFmpeg, mais scripts/validate_output.py
+a détecté un écart durée vidéo/audio de ~18s — le gel de plan tronquait un
+micro-extrait de fin de segment (quelques ms) qui tombait souvent entre
+deux frames et ne produisait aucune image, donc aucun gel. Corrigé en
+appliquant `tpad` directement sur le clip complet du segment (jamais vide)
+plutôt que sur un extrait de quelques millisecondes.
 """
 
 from __future__ import annotations
@@ -38,9 +41,6 @@ from schemas import EditDecision, NarrationManifestEntry, TimelineEntry
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
-
-FREEZE_SOURCE_WINDOW = 0.04  # secondes prélevées en fin de segment pour figer la dernière image
-
 
 @dataclass
 class Piece:
@@ -104,14 +104,18 @@ def _escape_filter_path(path: Path) -> str:
 
 
 def build_video_filter(
-    pieces: list[Piece], config: PipelineConfig, width: int, height: int, srt_path: Path
+    pieces: list[Piece], config: PipelineConfig, width: int, height: int, srt_path: Path, fps: float
 ) -> tuple[str, str]:
     chains = []
     labels = []
 
     for i, piece in enumerate(pieces):
         label = f"v{i}"
-        base = f"[0:v]trim=start={piece.start:.3f}:end={piece.end:.3f},setpts=PTS-STARTPTS"
+        # fps= force un débit constant tôt dans la chaîne : la source est en
+        # débit variable (capture d'écran typique), et sans ça `tpad` arrondit
+        # chaque clonage à la frame réelle la plus proche de son morceau, avec
+        # une dérive cumulée observée en test réel (~1.5s sur 17 gels de plan).
+        base = f"[0:v]trim=start={piece.start:.3f}:end={piece.end:.3f},setpts=PTS-STARTPTS,fps={fps}"
 
         overlay = None
         if piece.kind == "segment" and piece.decision is not None:
@@ -120,15 +124,12 @@ def build_video_filter(
             base = f"{base},{overlay}"
 
         if piece.kind == "segment" and piece.extension > 0:
-            body_label = f"{label}b"
-            freeze_label = f"{label}f"
-            freeze_start = max(piece.start, piece.end - FREEZE_SOURCE_WINDOW)
-            chains.append(f"{base}[{body_label}]")
-            chains.append(
-                f"[0:v]trim=start={freeze_start:.3f}:end={piece.end:.3f},setpts=PTS-STARTPTS,"
-                f"tpad=stop_mode=clone:stop_duration={piece.extension:.3f}[{freeze_label}]"
-            )
-            chains.append(f"[{body_label}][{freeze_label}]concat=n=2:v=1:a=0[{label}]")
+            # tpad clone la dernière frame DÉCODÉE de son entrée : appliqué
+            # directement sur le clip complet du segment (jamais vide, à
+            # l'inverse d'un micro-extrait de quelques ms qui peut tomber
+            # entre deux frames et ne produire aucune image — cas vécu en
+            # test réel, voir historique de ce fichier).
+            chains.append(f"{base},tpad=stop_mode=clone:stop_duration={piece.extension:.3f}[{label}]")
         else:
             chains.append(f"{base}[{label}]")
 
@@ -136,7 +137,13 @@ def build_video_filter(
 
     concat_inputs = "".join(f"[{lbl}]" for lbl in labels)
     chains.append(f"{concat_inputs}concat=n={len(labels)}:v=1:a=0[vconcat]")
-    chains.append(f"[vconcat]subtitles='{_escape_filter_path(srt_path)}'[vout]")
+    # Marge de sécurité : la quantification aux limites d'image de chaque
+    # morceau (trim/fps/tpad) fait dériver légèrement la durée totale vers le
+    # bas au fil de la concaténation (~0.6s observé sur 33 segments en test
+    # réel). On sur-étend puis on coupe à la durée exacte en sortie (-t dans
+    # render()) plutôt que de chercher un arrondi parfait par morceau.
+    chains.append("[vconcat]tpad=stop_mode=clone:stop_duration=2.000[vpadded]")
+    chains.append(f"[vpadded]subtitles='{_escape_filter_path(srt_path)}'[vout]")
 
     return ";".join(chains), "[vout]"
 
@@ -200,13 +207,14 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
         raise FileNotFoundError(f"Sous-titres introuvables : {srt_path}. Lance d'abord --step subtitles.")
 
     pieces = build_pieces(decisions, timeline_entries, source_duration)
-    video_filter, video_label = build_video_filter(pieces, config, width, height, srt_path)
+    total_duration = total_output_duration(pieces)
+    video_filter, video_label = build_video_filter(pieces, config, width, height, srt_path, inspection["fps"])
     audio_filter, audio_files, audio_label = build_audio_filter(
         decisions,
         timeline_by_id,
         narration_by_id,
         audio_input_start_index=1,
-        total_duration=total_output_duration(pieces),
+        total_duration=total_duration,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -224,6 +232,7 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
         "-crf", str(config.export.crf),
         "-c:a", config.export.audio_codec,
         "-ar", str(config.export.audio_sample_rate),
+        "-t", f"{total_duration:.3f}",
         str(final_path),
     ]
 
