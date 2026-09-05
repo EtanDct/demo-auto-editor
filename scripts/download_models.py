@@ -14,6 +14,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import platform
+import tarfile
+import urllib.request
+import zipfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +30,24 @@ from pipeline_config import PROJECT_ROOT, load_config
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
+
+# piper-tts (PyPI) dépend de piper-phonemize, sans wheel Windows : on utilise
+# à la place le binaire officiel publié par le projet (une seule release
+# couvre toutes les plateformes ci-dessous).
+PIPER_RELEASE_TAG = "2023.11.14-2"
+PIPER_ASSETS = {
+    ("Windows", None): "piper_windows_amd64.zip",
+    ("Linux", "x86_64"): "piper_linux_x86_64.tar.gz",
+    ("Linux", "aarch64"): "piper_linux_aarch64.tar.gz",
+    ("Linux", "armv7l"): "piper_linux_armv7l.tar.gz",
+    ("Darwin", "x86_64"): "piper_macos_x64.tar.gz",
+    ("Darwin", "arm64"): "piper_macos_aarch64.tar.gz",
+}
+
+
+def piper_executable_path(models_dir: Path) -> Path:
+    exe_name = "piper.exe" if platform.system() == "Windows" else "piper"
+    return models_dir / "piper_bin" / "piper" / exe_name
 
 
 @dataclass
@@ -86,12 +108,59 @@ def download_llm(config, models_dir: Path) -> list[DownloadedModel]:
     return [_record("llm", config.llm.repo_id, Path(local_path))]
 
 
+def _piper_asset_name() -> str:
+    system = platform.system()
+    machine = platform.machine()
+    key = (system, None) if system == "Windows" else (system, machine)
+    asset = PIPER_ASSETS.get(key)
+    if asset is None:
+        raise RuntimeError(
+            f"Plateforme non supportée pour le binaire Piper : {system}/{machine}. "
+            f"Plateformes connues : {sorted(PIPER_ASSETS)}"
+        )
+    return asset
+
+
+def download_piper_binary(models_dir: Path) -> list[DownloadedModel]:
+    exe_path = piper_executable_path(models_dir)
+    if exe_path.exists():
+        logger.info("Binaire Piper déjà présent : %s", exe_path)
+        return [_record("piper-binary", "rhasspy/piper", exe_path)]
+
+    target_dir = models_dir / "piper_bin"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    asset = _piper_asset_name()
+    url = f"https://github.com/rhasspy/piper/releases/download/{PIPER_RELEASE_TAG}/{asset}"
+    archive_path = target_dir / asset
+
+    logger.info("Téléchargement du binaire Piper depuis %s", url)
+    urllib.request.urlretrieve(url, archive_path)  # noqa: S310 (URL fixe, contrôlée par ce module)
+
+    logger.info("Extraction de %s", archive_path)
+    if asset.endswith(".zip"):
+        with zipfile.ZipFile(archive_path) as zf:
+            zf.extractall(target_dir)
+    else:
+        with tarfile.open(archive_path) as tf:
+            tf.extractall(target_dir)
+    archive_path.unlink()
+
+    if platform.system() != "Windows":
+        exe_path.chmod(0o755)
+
+    if not exe_path.exists():
+        raise RuntimeError(f"Binaire Piper introuvable après extraction : {exe_path}")
+
+    return [_record("piper-binary", "rhasspy/piper", exe_path)]
+
+
 def download_tts(config, models_dir: Path) -> list[DownloadedModel]:
+    records = download_piper_binary(models_dir)
+
     lang_family, lang_code, speaker, quality = parse_piper_voice(config.tts.voice)
     subpath = f"{lang_family}/{lang_code}/{speaker}/{quality}/{config.tts.voice}"
     target_dir = models_dir / "piper"
     logger.info("Téléchargement voix Piper (%s)", config.tts.voice)
-    records = []
     for ext in (".onnx", ".onnx.json"):
         local_path = hf_hub_download(
             repo_id=config.tts.piper_repo_id,

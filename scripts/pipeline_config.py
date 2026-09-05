@@ -33,6 +33,8 @@ class InspectionConfig(BaseModel):
 
 
 class WhisperConfig(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     model_repo: str
     model_size: str
     compute_type: str = "auto"
