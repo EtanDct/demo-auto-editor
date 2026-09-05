@@ -1,0 +1,11 @@
+# Glossaire des termes SAP : traductions FR -> EN validées manuellement.
+# Chargé par scripts/translate.py et injecté dans le prompt du LLM local
+# pour forcer une terminologie cohérente.
+#
+# Exemple :
+# - fr: "société"
+#   en: "company code"
+# - fr: "poste comptable"
+#   en: "GL account"
+
+terms: []

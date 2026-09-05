@@ -1,0 +1,61 @@
+# Configuration centralisée du pipeline (voir docs/plan-technique.md, section 10)
+# Toutes les valeurs ci-dessous sont modifiables ; les défauts fonctionnent
+# dès l'installation sur une machine 16 Go RAM sans GPU.
+
+paths:
+  input_video: input/source.mp4
+  data_dir: data
+  audio_dir: audio
+  frames_dir: frames
+  overlays_dir: overlays
+  models_dir: models
+  output_dir: output
+  logs_dir: logs
+
+hardware:
+  # auto: détecté au lancement (voir scripts/hardware.py) et journalisé dans logs/hardware.json
+  # cpu / cuda: force le mode
+  device: auto
+
+inspection:
+  thumbnail_interval_seconds: 2.0
+
+whisper:
+  # tiny (tests rapides) / small (défaut) / medium (précision accrue)
+  model_repo: Systran/faster-whisper-small
+  model_size: small
+  compute_type: auto
+  language: fr
+
+llm:
+  # Modèle de traduction + conducteur de montage, tiré directement de Hugging Face.
+  repo_id: bartowski/Qwen2.5-3B-Instruct-GGUF
+  filename: Qwen2.5-3B-Instruct-Q4_K_M.gguf
+  n_ctx: 8192
+  n_gpu_layers: auto
+  temperature: 0.2
+
+tts:
+  engine: piper
+  piper_repo_id: rhasspy/piper-voices
+  voice: en_US-amy-medium
+  sample_rate: 22050
+
+retiming:
+  max_speed_factor: 1.08
+  min_speed_factor: 0.95
+  min_pause_ms: 80
+
+subtitles:
+  max_chars_per_line: 42
+  max_lines: 2
+
+export:
+  container: mp4
+  video_codec: libx264
+  audio_codec: aac
+  audio_sample_rate: 48000
+  crf: 18
+  preview_max_height: 480
+
+glossary_file: data/glossary.yaml
