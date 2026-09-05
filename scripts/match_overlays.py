@@ -197,6 +197,25 @@ def arbitrate_with_cursor(
     return winner, round(distance, 4)
 
 
+def display_window(
+    decision: EditDecision, element: ScreenElement
+) -> tuple[float | None, float | None]:
+    """Fenêtre d'affichage de l'incrustation, bornée à la présence de l'élément.
+
+    Un cadre dessiné alors que l'élément n'est plus à l'écran se voit
+    immédiatement. On borne donc l'effet à ce que l'index constate, plutôt que
+    de couvrir tout le segment par défaut. Quand l'élément est présent d'un
+    bout à l'autre, on ne renseigne rien : le conducteur de montage reste
+    lisible et l'effet couvre naturellement le segment.
+    """
+    duration = decision.source_end - decision.source_start
+    start = max(0.0, element.first_seen - decision.source_start)
+    end = min(duration, element.last_seen - decision.source_start)
+    if start <= 0 and end >= duration:
+        return None, None
+    return round(start, 3), round(end, 3)
+
+
 def judge(
     decision: EditDecision,
     scored: list[ScoredElement],
@@ -278,9 +297,12 @@ def judge(
             evidence=evidence,
         )
 
+    start_offset, end_offset = display_window(decision, best.element)
     return OverlayCandidate(
         **base,
         accepted=True,
+        start_offset=start_offset,
+        end_offset=end_offset,
         reason=(
             "départagé par le pointeur" if "cursor" in evidence
             else "correspondance unique et stable"
@@ -336,6 +358,8 @@ def apply_to_edl(decisions: list[EditDecision], report: OverlayMatchReport, conf
             y=candidate.box.y,
             width=candidate.box.width,
             height=candidate.box.height,
+            start_offset=candidate.start_offset,
+            end_offset=candidate.end_offset,
         )
         applied += 1
     return decisions, applied

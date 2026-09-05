@@ -99,6 +99,8 @@ class OverlayMatchingConfig(BaseModel):
 
 
 class OverlaysConfig(BaseModel):
+    fade_seconds: float = 0.25
+    fade_steps: int = 4
     font_path: str | None = None
     highlight_color: str = "yellow"
     callout_color: str = "white"

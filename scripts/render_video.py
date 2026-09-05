@@ -119,7 +119,13 @@ def build_video_filter(
 
         overlay = None
         if piece.kind == "segment" and piece.decision is not None:
-            overlay = overlay_filter_for(piece.decision.visual_action, config, width, height)
+            # `setpts=PTS-STARTPTS` ci-dessus ramène le temps du morceau à zéro :
+            # les décalages de `visual_action` sont donc bien relatifs au début
+            # du segment. La durée transmise exclut l'extension par gel de plan,
+            # appliquée plus bas et qui prolongerait l'effet sur l'image figée.
+            overlay = overlay_filter_for(
+                piece.decision.visual_action, config, width, height, piece.end - piece.start
+            )
         if overlay:
             base = f"{base},{overlay}"
 

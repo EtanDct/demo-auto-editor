@@ -43,6 +43,25 @@ class VisualAction(BaseModel):
     y: float = Field(ge=0, le=1)
     width: float = Field(gt=0, le=1)
     height: float = Field(gt=0, le=1)
+    # Fenêtre d'affichage, en secondes depuis le début du segment. None = tout
+    # le segment. Encadrer un élément pendant qu'on parle d'autre chose se voit
+    # tout de suite ; c'est ce que ces deux champs permettent d'éviter.
+    start_offset: float | None = Field(default=None, ge=0)
+    end_offset: float | None = Field(default=None, gt=0)
+
+
+    @model_validator(mode="after")
+    def check_window(self) -> "VisualAction":
+        if (
+            self.start_offset is not None
+            and self.end_offset is not None
+            and self.end_offset <= self.start_offset
+        ):
+            raise ValueError(
+                f"{self.target}: end_offset ({self.end_offset}) doit suivre "
+                f"start_offset ({self.start_offset})"
+            )
+        return self
 
 
 class NarrationSpec(BaseModel):
@@ -251,6 +270,10 @@ class OverlayCandidate(BaseModel):
     # la position du pointeur a départagé des libellés équivalents.
     evidence: list[str] = Field(default_factory=list)
     cursor_distance: float | None = None
+    # Fenêtre d'affichage proposée, en secondes depuis le début du segment.
+    # None = tout le segment.
+    start_offset: float | None = None
+    end_offset: float | None = None
 
 
 class OverlayMatchReport(BaseModel):

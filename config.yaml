@@ -98,6 +98,11 @@ overlay_matching:
   action_type: highlight       # effet posé sur les correspondances retenues
 
 overlays:
+  # Fondu d'entrée/sortie des effets minutés. drawtext fond réellement (son
+  # alpha accepte une expression) ; drawbox ne sait animer ni son alpha ni son
+  # épaisseur, son fondu est donc approché par paliers d'opacité.
+  fade_seconds: 0.25   # 0 = apparition franche
+  fade_steps: 4        # paliers du fondu des cadres ; plus haut = plus doux
   font_path: null  # ex: "C:/Windows/Fonts/arialbd.ttf" ; requis pour callout/popup sous Windows
   highlight_color: "yellow"
   callout_color: "white"

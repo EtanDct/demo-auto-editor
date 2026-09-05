@@ -47,6 +47,10 @@ les coordonnées à la main en prend deux minutes.
 La distinction nommé / position est ce qui évite d'encadrer « Top
 repositories » parce que le narrateur a dit « en haut de la page ».
 
+Une incrustation retenue ne couvre que la portion du segment où l'élément est
+effectivement affiché (`start_offset` / `end_offset` de `visual_action`), avec
+un fondu d'entrée et de sortie.
+
 ## Prérequis
 
 - **FFmpeg / FFprobe** (moteur de montage, extraction audio, ffprobe pour les métadonnées)
@@ -180,10 +184,12 @@ Ce qui reste à valider :
   nomme des libellés écrits à l'écran, dans la même langue, pour mesurer
   précision et rappel.
 - **incrustations visuelles** : `visual_action` est toujours à `null` en sortie
-  de l'étape `translate` et doit être renseigné à la main. Seul `highlight` a
-  été exercé sur du réel à ce jour ; `zoom`, `callout`, `popup` et
-  `cursor_emphasis` ne l'ont pas été. Les effets texte (`callout`, `popup`)
-  exigent `overlays.font_path` sous Windows.
+  de l'étape `translate` et doit être renseigné à la main (ou par `match
+  --apply`). `highlight` est exercé sur du réel, minutage et fondu compris ;
+  `zoom`, `callout`, `popup` et `cursor_emphasis` ne le sont pas encore. Les
+  effets texte (`callout`, `popup`) exigent `overlays.font_path` sous Windows,
+  et un `zoom` ne peut pas être minuté (FFmpeg n'expose pas `crop` à la
+  timeline).
 - **terminologie SAP** : le glossaire est vide et l'extrait de test ne porte pas
   sur SAP — le cœur métier du projet n'a donc encore rien validé.
 - **découpage des phrases** : Whisper coupe au milieu des phrases et chaque
