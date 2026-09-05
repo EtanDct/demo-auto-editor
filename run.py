@@ -27,9 +27,11 @@ STEP_ORDER = [
 # pas encore consommées par le rendu.
 #   screen : index du texte affiché à l'écran (base du montage automatique),
 #            plusieurs minutes d'OCR selon la durée de la vidéo.
+#   cursor : suivi du pointeur, second signal du montage automatique ;
+#            départage les libellés équivalents. Réutilise les frames de `screen`.
 #   match  : rapproche ce que le narrateur nomme de ce qui est à l'écran et
 #            propose des incrustations ; n'écrit rien sans --apply.
-EXTRA_STEPS = ["screen", "match"]
+EXTRA_STEPS = ["screen", "cursor", "match"]
 ALL_STEPS = STEP_ORDER + EXTRA_STEPS
 
 SIMPLE_STEPS = {
@@ -53,6 +55,10 @@ def _run_step(step: str, config_path: Path | None, input_override: Path | None) 
         import detect_screen_text
 
         detect_screen_text.main(config_path=config_path, max_seconds=None, regroup_only=False)
+    elif step == "cursor":
+        import detect_cursor
+
+        detect_cursor.main(config_path=config_path)
     elif step == "match":
         import match_overlays
 

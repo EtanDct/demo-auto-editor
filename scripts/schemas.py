@@ -247,6 +247,10 @@ class OverlayCandidate(BaseModel):
     score: float = 0.0
     visible_fraction: float = 0.0
     rivals: list[str] = Field(default_factory=list)
+    # Signaux ayant conduit au verdict : "ocr" seul, ou "ocr" + "cursor" quand
+    # la position du pointeur a départagé des libellés équivalents.
+    evidence: list[str] = Field(default_factory=list)
+    cursor_distance: float | None = None
 
 
 class OverlayMatchReport(BaseModel):
@@ -259,3 +263,18 @@ class OverlayMatchReport(BaseModel):
     @property
     def accepted(self) -> list[OverlayCandidate]:
         return [c for c in self.candidates if c.accepted]
+
+
+class CursorSample(BaseModel):
+    """Position du pointeur à un instant, normalisée entre 0 et 1."""
+
+    timestamp: float = Field(ge=0)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+
+
+class CursorTrack(BaseModel):
+    """Sortie de l'étape `cursor` : `data/cursor_track.json`."""
+
+    sample_fps: float
+    samples: list[CursorSample] = Field(default_factory=list)

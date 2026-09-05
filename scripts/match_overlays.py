@@ -22,6 +22,11 @@ règles écartent donc un candidat, dans cet ordre :
 4. **boîte aberrante** : trop petite pour être un contrôle, ou si grande que
    l'OCR a capturé un bloc de texte entier.
 
+Une seule chose peut sauver un candidat écarté pour ambiguïté : la position du
+pointeur (étape `cursor`). Si un seul des prétendants est sous la souris, c'est
+lui. Le pointeur n'intervient que là — il ne fabrique jamais une correspondance
+à partir de rien et ne renverse jamais un appariement déjà net.
+
 Rien n'est écrit dans le conducteur de montage sans `--apply` : le rapport se
 relit d'abord, planche de contact à l'appui (`--contact-sheet`).
 """
@@ -37,9 +42,11 @@ import typer
 import yaml
 
 from build_narration import load_edl
+from detect_cursor import load_track, position_at
 from pipeline_config import PipelineConfig, load_config
 from schemas import (
     BoundingBox,
+    CursorTrack,
     EditDecision,
     OverlayCandidate,
     OverlayMatchReport,
@@ -129,8 +136,72 @@ def gather_candidates(
     return sorted(scored, key=lambda s: (-s.score, -s.visible_fraction))
 
 
+def distance_to_box(box: BoundingBox, point: tuple[float, float]) -> float:
+    """Distance du pointeur à la boîte, 0 s'il est dedans.
+
+    Calculée en coordonnées normalisées : sur une image 16/9, un même seuil
+    couvre donc environ deux fois plus de pixels horizontalement que
+    verticalement. C'est plutôt souhaitable ici, les contrôles d'une interface
+    étant serrés verticalement et espacés horizontalement.
+    """
+    x, y = point
+    dx = max(box.x - x, 0.0, x - (box.x + box.width))
+    dy = max(box.y - y, 0.0, y - (box.y + box.height))
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def cursor_positions_during(
+    track: CursorTrack | None, decision: EditDecision, config: PipelineConfig
+) -> list[tuple[float, float]]:
+    """Positions du pointeur pendant le segment, marge comprise.
+
+    On retient toutes les positions de la fenêtre plutôt qu'un instant précis :
+    le narrateur amène la souris sur l'élément à un moment quelconque de sa
+    phrase, souvent avant de le nommer.
+    """
+    if track is None:
+        return []
+    margin = config.overlay_matching.time_margin_seconds
+    start, end = decision.source_start - margin, decision.source_end + margin
+    positions = [(s.x, s.y) for s in track.samples if start <= s.timestamp <= end]
+    if positions:
+        return positions
+    # Pointeur immobile pendant tout le segment : sa dernière position connue
+    # reste valable, dans la limite de `hold_seconds`.
+    held = position_at(track, decision.source_start, config.cursor.hold_seconds)
+    return [held] if held else []
+
+
+def arbitrate_with_cursor(
+    contenders: list[ScoredElement], positions: list[tuple[float, float]], config: PipelineConfig
+) -> tuple[ScoredElement | None, float | None]:
+    """Départage des libellés équivalents par la position du pointeur.
+
+    Le pointeur ne sert qu'ici : il ne crée jamais une correspondance à partir
+    de rien et ne renverse jamais un appariement déjà net. Il ne tranche que si
+    un seul prétendant est assez près, sinon l'ambiguïté demeure et on renonce.
+    """
+    max_distance = config.overlay_matching.cursor_max_distance
+    if not positions or max_distance <= 0:
+        return None, None
+
+    near = []
+    for contender in contenders:
+        distance = min(distance_to_box(contender.element.box, p) for p in positions)
+        if distance <= max_distance:
+            near.append((distance, contender))
+
+    if len(near) != 1:
+        return None, None
+    distance, winner = near[0]
+    return winner, round(distance, 4)
+
+
 def judge(
-    decision: EditDecision, scored: list[ScoredElement], config: PipelineConfig
+    decision: EditDecision,
+    scored: list[ScoredElement],
+    config: PipelineConfig,
+    cursor_positions: list[tuple[float, float]] | None = None,
 ) -> OverlayCandidate:
     """Applique les règles de refus et rend un verdict motivé."""
     settings = config.overlay_matching
@@ -155,15 +226,26 @@ def judge(
 
     best = viable[0]
     rivals = [s for s in viable[1:] if best.score - s.score <= settings.ambiguity_margin]
+    evidence = ["ocr"]
+    cursor_distance = None
+    beaten: list[str] = []
     if rivals:
-        return OverlayCandidate(
-            **base,
-            accepted=False,
-            reason=f"ambigu : {len(rivals) + 1} libellés équivalents à l'écran",
-            score=best.score,
-            element_text=best.element.text,
-            rivals=[s.element.text for s in rivals[:4]],
+        winner, cursor_distance = arbitrate_with_cursor(
+            [best, *rivals], cursor_positions or [], config
         )
+        if winner is None:
+            return OverlayCandidate(
+                **base,
+                accepted=False,
+                reason=f"ambigu : {len(rivals) + 1} libellés équivalents à l'écran",
+                score=best.score,
+                element_text=best.element.text,
+                rivals=[s.element.text for s in rivals[:4]],
+                evidence=evidence,
+            )
+        beaten = [s.element.text for s in [best, *rivals] if s is not winner]
+        best = winner
+        evidence = ["ocr", "cursor"]
 
     if best.visible_fraction < settings.min_visible_fraction:
         return OverlayCandidate(
@@ -177,6 +259,7 @@ def judge(
             element_id=best.element.id,
             element_text=best.element.text,
             visible_fraction=best.visible_fraction,
+            evidence=evidence,
         )
 
     area = best.element.box.area
@@ -192,27 +275,45 @@ def judge(
             element_id=best.element.id,
             element_text=best.element.text,
             visible_fraction=best.visible_fraction,
+            evidence=evidence,
         )
 
     return OverlayCandidate(
         **base,
         accepted=True,
-        reason="correspondance unique et stable",
+        reason=(
+            "départagé par le pointeur" if "cursor" in evidence
+            else "correspondance unique et stable"
+        ),
         element_id=best.element.id,
         element_text=best.element.text,
         box=best.element.box,
         score=best.score,
         visible_fraction=best.visible_fraction,
+        rivals=beaten,
+        evidence=evidence,
+        cursor_distance=cursor_distance,
     )
 
 
 def match(
-    decisions: list[EditDecision], index: ScreenTextIndex, config: PipelineConfig
+    decisions: list[EditDecision],
+    index: ScreenTextIndex,
+    config: PipelineConfig,
+    cursor_track: CursorTrack | None = None,
 ) -> OverlayMatchReport:
     named = [
         d for d in decisions if d.ui_reference and d.ui_reference.kind == "named_control"
     ]
-    candidates = [judge(d, gather_candidates(d, index.elements, config), config) for d in named]
+    candidates = [
+        judge(
+            d,
+            gather_candidates(d, index.elements, config),
+            config,
+            cursor_positions_during(cursor_track, d, config),
+        )
+        for d in named
+    ]
     return OverlayMatchReport(
         candidates=candidates,
         segments_total=len(decisions),
@@ -240,7 +341,12 @@ def apply_to_edl(decisions: list[EditDecision], report: OverlayMatchReport, conf
     return decisions, applied
 
 
-def draw_contact_sheet(report: OverlayMatchReport, config: PipelineConfig, out_path: Path) -> int:
+def draw_contact_sheet(
+    report: OverlayMatchReport,
+    config: PipelineConfig,
+    out_path: Path,
+    cursor_track: CursorTrack | None = None,
+) -> int:
     """Planche de contact : chaque correspondance retenue, cadre dessiné.
 
     Valider une correspondance à l'œil prend deux secondes, en saisir les
@@ -271,6 +377,14 @@ def draw_contact_sheet(report: OverlayMatchReport, config: PipelineConfig, out_p
         x1, y1 = int((box.x + box.width) * width), int((box.y + box.height) * height)
         cv2.rectangle(image, (x0 - 4, y0 - 4), (x1 + 4, y1 + 4), (0, 220, 255), 3)
 
+        # Le pointeur est dessiné quand il a servi à trancher : sans lui, un
+        # arbitrage se relit à l'aveugle. On trace toutes les positions de la
+        # fenêtre, celles qu'a réellement vues l'arbitrage — la position à
+        # l'instant médian n'est pas forcément l'une d'elles.
+        if "cursor" in candidate.evidence and cursor_track is not None:
+            for px, py in cursor_positions_during(cursor_track, decision, config):
+                cv2.circle(image, (int(px * width), int(py * height)), 22, (255, 120, 0), 2)
+
         tile = cv2.resize(image, (width // 2, height // 2))
         # La légende va sur son propre bandeau : écrite sur l'image, elle se
         # confond avec l'interface capturée et devient illisible.
@@ -294,7 +408,8 @@ def _with_caption(tile, candidate: OverlayCandidate):
     cv2.putText(
         caption,
         f"{candidate.segment_id}  \"{candidate.label}\" -> \"{candidate.element_text}\"  "
-        f"score {candidate.score:.2f}  visible {candidate.visible_fraction:.0%}",
+        f"score {candidate.score:.2f}  visible {candidate.visible_fraction:.0%}  "
+        f"[{'+'.join(candidate.evidence)}]",
         (12, 23), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 1, cv2.LINE_AA,
     )
     return np.vstack([caption, tile])
@@ -332,12 +447,22 @@ def main(
 
     decisions = load_edl(data_dir / "edit_decision_list.yaml")
     index = load_screen_index(data_dir / "screen_elements.json")
-    report = match(decisions, index, config)
+
+    cursor_path = data_dir / "cursor_track.json"
+    cursor_track = load_track(cursor_path) if cursor_path.exists() else None
+    if cursor_track is None:
+        logger.info(
+            "Pas de trajectoire du pointeur (%s) : les ambiguïtés ne pourront pas être "
+            "départagées. Lance 'python run.py --step cursor' pour l'activer.",
+            cursor_path,
+        )
+
+    report = match(decisions, index, config, cursor_track)
     write_report(report, data_dir / "overlay_candidates.json")
 
     if contact_sheet:
         out_path = config.paths.resolve("logs_dir") / "overlay_contact_sheet.jpg"
-        drawn = draw_contact_sheet(report, config, out_path)
+        drawn = draw_contact_sheet(report, config, out_path, cursor_track)
         logger.info("Planche de contact : %d vignette(s) dans %s", drawn, out_path)
 
     if apply:

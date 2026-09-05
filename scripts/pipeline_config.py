@@ -79,9 +79,18 @@ class SubtitlesConfig(BaseModel):
     font_path: str | None = None
 
 
+class CursorConfig(BaseModel):
+    pixel_delta: int = 25
+    min_area_fraction: float = 0.00002
+    max_area_fraction: float = 0.002
+    match_tolerance_fraction: float = 0.01
+    hold_seconds: float = 2.0
+
+
 class OverlayMatchingConfig(BaseModel):
     min_score: float = 0.75
     ambiguity_margin: float = 0.1
+    cursor_max_distance: float = 0.02
     min_visible_fraction: float = 0.5
     min_box_area: float = 0.0002
     max_box_area: float = 0.25
@@ -115,6 +124,7 @@ class PipelineConfig(BaseModel):
     tts: TtsConfig
     retiming: RetimingConfig
     subtitles: SubtitlesConfig
+    cursor: CursorConfig
     overlay_matching: OverlayMatchingConfig
     overlays: OverlaysConfig
     export: ExportConfig

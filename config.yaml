@@ -70,6 +70,16 @@ subtitles:
   max_lines: 2
   font_path: null  # ex: "C:/Windows/Fonts/arial.ttf" ; null = police par défaut FFmpeg
 
+cursor:
+  # Suivi du pointeur (étape `cursor`), second signal du montage automatique.
+  # Aucun gabarit de curseur : on cherche une petite zone qui se déplace, ce qui
+  # reste vrai quels que soient la forme du pointeur, le thème et la résolution.
+  pixel_delta: 25              # écart par pixel au-delà duquel il a changé
+  min_area_fraction: 0.00002   # ~40 px sur du 1920x1020 : plus petit = bruit
+  max_area_fraction: 0.002     # ~4000 px : plus grand = ce n'est pas un pointeur
+  match_tolerance_fraction: 0.01  # tolérance d'appariement entre deux écarts
+  hold_seconds: 2.0            # durée pendant laquelle une position reste valable
+
 overlay_matching:
   # Appariement entre ce que le narrateur nomme (ui_reference) et ce que l'OCR
   # a lu à l'écran. Réglé pour la précision, pas pour le rappel : une
@@ -77,6 +87,10 @@ overlay_matching:
   # incrustation manquante ne se voit pas.
   min_score: 0.75              # en dessous, le libellé ne correspond pas assez
   ambiguity_margin: 0.1        # deux candidats à moins de ça = ambigu, on renonce
+  # Le pointeur ne départage que s'il est SUR le candidat : la boîte OCR ne
+  # couvre que le texte, pas toute la zone cliquable, d'où une marge étroite.
+  # Plus large (0.06 testé), un pointeur qui passe à côté suffisait à trancher.
+  cursor_max_distance: 0.02    # 0 = désactive l'arbitrage par le pointeur
   min_visible_fraction: 0.5    # l'élément doit être affiché la moitié du segment
   min_box_area: 0.0002         # sous ce seuil, boîte trop petite pour être crédible
   max_box_area: 0.25           # au-dessus, l'OCR a capturé un bloc, pas un contrôle

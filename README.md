@@ -26,13 +26,19 @@ avec le moment où le narrateur désigne un élément d'interface) :
   moment (`data/screen_elements.json`) ;
 - l'étape `translate` fait déclarer au LLM, pour chaque segment, ce que le
   narrateur désigne (`ui_reference`) : un élément **nommé** par son libellé,
-  une simple **position** ("en haut à gauche"), ou **rien**.
+  une simple **position** ("en haut à gauche"), ou **rien** ;
+- l'étape `cursor` suit le pointeur de souris (`data/cursor_track.json`), signal
+  indépendant du texte donc insensible au décalage de langue entre la narration
+  et l'interface.
 
-L'étape `match` rapproche les deux et propose une incrustation quand la
+L'étape `match` rapproche le tout et propose une incrustation quand la
 correspondance ne laisse pas de place au doute. Elle est réglée pour la
 précision, pas pour le rappel : elle refuse sur score insuffisant, sur
 ambiguïté (le même libellé affiché à deux endroits), sur élément trop fugace ou
-sur boîte aberrante, et consigne le motif de chaque refus. Rien n'atteint le
+sur boîte aberrante, et consigne le motif de chaque refus. Seule la position du
+pointeur peut sauver un candidat écarté pour ambiguïté, et uniquement si elle
+tombe **sur** lui : le pointeur ne fabrique jamais une correspondance à partir
+de rien et ne renverse jamais un appariement déjà net. Rien n'atteint le
 conducteur de montage sans `--apply`, et `--contact-sheet` produit une planche
 de relecture (cadre dessiné sur la frame, légende avec score et durée
 d'affichage) : valider une correspondance à l'œil prend deux secondes, saisir
@@ -103,6 +109,9 @@ python run.py --step screen
 python scripts/detect_screen_text.py --max-seconds 40   # essai sur une tranche
 python scripts/detect_screen_text.py --regroup          # re-règle sans relancer l'OCR
 
+# Hors pipeline par défaut : suivi du pointeur (réutilise les frames de `screen`)
+python run.py --step cursor
+
 # Hors pipeline par défaut : appariement narrateur / écran
 python run.py --step match                              # rapport seul
 python scripts/match_overlays.py --contact-sheet        # + planche de relecture
@@ -157,16 +166,19 @@ Ce que ce passage a corrigé :
 
 Ce qui reste à valider :
 
-- **montage automatique** : la chaîne `screen` -> `translate` -> `match` est
-  en place, mais l'extrait de référence ne permet pas de la valider. Le
-  narrateur y décrit au lieu de nommer, et l'interface est en anglais alors que
-  la narration est en français : sur 34 segments, 11 désignent un élément
-  nommé, aucun n'est retrouvable à l'écran, et l'étape `match` en retient donc
-  0 — comportement correct sur cette vidéo, mais qui ne prouve pas que les
-  seuils sont bons. Le chemin d'acceptation est vérifié séparément (contrôle
-  positif sur "Pull requests", score 1.00, boîte correcte). Il faut un extrait
-  où le narrateur nomme des libellés écrits à l'écran, dans la même langue, pour
-  mesurer précision et rappel.
+- **montage automatique** : la chaîne `screen` / `cursor` -> `translate` ->
+  `match` est en place, mais l'extrait de référence ne permet pas de la valider.
+  Le narrateur y décrit au lieu de nommer, et l'interface est en anglais alors
+  que la narration est en français : sur 34 segments, 11 désignent un élément
+  nommé, aucun n'est retrouvable à l'écran, et `match` en retient donc 0 —
+  comportement correct sur cette vidéo, mais qui ne prouve pas que les seuils
+  sont bons. Chaque brique est donc vérifiée séparément sur les données réelles :
+  appariement (contrôle positif "Pull requests", score 1.00, boîte correcte),
+  détection du pointeur (6 positions sur 6 justes, flèche comme main), et
+  concordance des repères (36 des 86 positions du pointeur tombent dans la boîte
+  d'un libellé, 22 autres à moins de 0.02). Il faut un extrait où le narrateur
+  nomme des libellés écrits à l'écran, dans la même langue, pour mesurer
+  précision et rappel.
 - **incrustations visuelles** : `visual_action` est toujours à `null` en sortie
   de l'étape `translate` et doit être renseigné à la main. Seul `highlight` a
   été exercé sur du réel à ce jour ; `zoom`, `callout`, `popup` et
