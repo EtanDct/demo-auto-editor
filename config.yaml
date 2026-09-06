@@ -98,11 +98,18 @@ cursor_overlay:
   max_hold_seconds: 6.0
   hover_step_seconds: 0.125  # pas de la grille où l'on cherche les survols
 
-  # Marqueur qui suit le pointeur. Il vise à attirer l'œil, pas à pointer au
-  # pixel : la détection situe le centre de la tache en mouvement, alors que le
-  # point actif d'une flèche est sa pointe, d'où une trentaine de pixels
-  # d'écart. Le marqueur est dimensionné pour englober le curseur malgré ça.
-  follow_enabled: true
+  # Marqueur qui suit le pointeur. Désactivé : il produit trop de faux
+  # positifs, constaté à l'usage. Deux causes, la seconde rédhibitoire :
+  #   - il est décalé d'une trentaine de pixels, la détection situant le centre
+  #     de la tache en mouvement quand le point actif d'une flèche est sa pointe ;
+  #   - surtout, il reste affiché sur la dernière position tenue (jusqu'à
+  #     `max_hold_seconds`), donc figé là où la souris n'est plus. Tenir la
+  #     position vaut pour déduire un survol, corroboré par l'élément qui se
+  #     trouve dessous ; ça ne vaut pas pour un marqueur qui affirme où est la
+  #     souris.
+  # Le remettre à true suppose de ne le dessiner que sur les intervalles
+  # réellement détectés, pas sur les positions tenues.
+  follow_enabled: false
   marker_size: 0.055        # côté du cadre, en fraction de l'image
   marker_color: "cyan"
   marker_opacity: 0.7

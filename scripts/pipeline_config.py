@@ -92,7 +92,7 @@ class CursorOverlayConfig(BaseModel):
     enabled: bool = True
     max_hold_seconds: float = 6.0
     hover_step_seconds: float = 0.125
-    follow_enabled: bool = True
+    follow_enabled: bool = False
     marker_size: float = 0.055
     marker_color: str = "cyan"
     marker_opacity: float = 0.7

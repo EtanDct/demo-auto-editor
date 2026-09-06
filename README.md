@@ -52,11 +52,17 @@ effectivement affiché (`start_offset` / `end_offset` de `visual_action`), avec
 un fondu d'entrée et de sortie.
 
 **Les incrustations pilotées par la souris** (`cursor_overlay` dans
-`config.yaml`) ne passent pas par l'appariement du tout : un marqueur suit le
-pointeur, et le libellé sur lequel la souris se pose est encadré. Comme rien
-n'y dépend du texte prononcé, elles fonctionnent quelle que soit la langue de
-l'interface et quoi que dise le narrateur — c'est la voie qui produit
-effectivement des incrustations aujourd'hui.
+`config.yaml`) ne passent pas par l'appariement du tout : le libellé sur lequel
+la souris se pose est encadré. Comme rien n'y dépend du texte prononcé, elles
+fonctionnent quelle que soit la langue de l'interface et quoi que dise le
+narrateur — c'est la voie qui produit effectivement des incrustations
+aujourd'hui.
+
+Un marqueur suivant le pointeur existe aussi (`follow_enabled`) mais est
+désactivé : il reste figé sur la dernière position tenue pendant les creux de
+détection, donc là où la souris n'est plus. Tenir la position vaut pour déduire
+un survol, corroboré par l'élément qui se trouve dessous ; pas pour un marqueur
+qui prétend dire où est la souris.
 
 ## Prérequis
 
