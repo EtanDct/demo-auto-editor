@@ -19,6 +19,12 @@ vidéo source
   -> FFmpeg (montage, overlays, sous-titres)
 ```
 
+L'étape optionnelle `crop` retire au préalable le bandeau du navigateur —
+onglets, URL, favoris — pour ne garder que la page présentée. Aucune mise en
+page n'est supposée : la frontière est mesurée sur chaque vidéo, là où l'image
+cesse d'être figée. Elle produit une vidéo de travail sur laquelle tout l'aval
+se recale, et une image de contrôle dans `logs/crop_preview.jpg`.
+
 Deux briques préparent le montage automatique (synchroniser une incrustation
 avec le moment où le narrateur désigne un élément d'interface) :
 
@@ -121,6 +127,9 @@ python run.py --step subtitles
 python run.py --step render
 python run.py --step validate
 
+# Hors pipeline par défaut : retrait du bandeau de navigateur
+python run.py --step crop
+
 # Hors pipeline par défaut : index OCR du texte à l'écran (plusieurs minutes)
 python run.py --step screen
 python scripts/detect_screen_text.py --max-seconds 40   # essai sur une tranche
@@ -147,11 +156,22 @@ data/        métadonnées, transcription, conducteur de montage, sous-titres,
 audio/       audio source et narration générée (non versionné)
 frames/      vignettes extraites (non versionné)
 overlays/    assets d'incrustation (zoom, highlight, callout...)
+work/        vidéo recadrée et carton d'intro (non versionné)
 scripts/     étapes du pipeline
 output/      rendus finaux (non versionné)
 logs/        journaux d'exécution
 models/      poids des modèles téléchargés (non versionné)
 ```
+
+## Carton d'introduction
+
+La vidéo livrée s'ouvre sur un carton de cinq secondes. Le titre est produit par
+le LLM local à partir du début de la transcription et écrit dans
+`data/intro.json` ; `intro.title` et `intro.subtitle` dans `config.yaml` le
+remplacent sans relancer la traduction, et `intro.enabled: false` le supprime.
+
+Le carton est encodé à part aux paramètres exacts du master puis collé devant
+lui sans réencodage : rien à décaler côté audio, sous-titres ou timeline.
 
 ## Tests
 
