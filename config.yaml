@@ -9,6 +9,7 @@ paths:
   frames_dir: frames
   overlays_dir: overlays
   models_dir: models
+  work_dir: work
   output_dir: output
   logs_dir: logs
 
@@ -19,6 +20,23 @@ hardware:
 
 inspection:
   thumbnail_interval_seconds: 2.0
+
+crop:
+  # Retrait du bandeau de navigateur (onglets, URL, favoris), pour ne garder
+  # que la page présentée. Rien de la mise en page n'est supposé : la frontière
+  # est mesurée sur chaque vidéo, là où l'image cesse d'être figée.
+  #   auto  : détection (défaut)
+  #   off   : ne rien rogner
+  #   <n>   : imposer n pixels, une fois la valeur mesurée sur une série
+  top: auto
+  # Plafond de sécurité. Au-delà, on refuse de rogner : une bande figée aussi
+  # haute est plus probablement un en-tête applicatif (la barre supérieure de
+  # SAP Fiori fait partie du produit) qu'un bandeau de navigateur.
+  max_fraction: 0.25
+  run_rows: 20          # lignes consécutives de contenu exigées pour trancher
+  sample_fps: 1.0       # échantillonnage pour la mesure
+  sample_frames: 120    # nombre d'images retenues
+  intermediate_crf: 14  # qualité de la vidéo de travail (réencodée ensuite)
 
 screen_text:
   # Index du texte affiché à l'écran (étape `screen`), base du montage automatique.
@@ -160,10 +178,25 @@ overlays:
   # épaisseur, son fondu est donc approché par paliers d'opacité.
   fade_seconds: 0.25   # 0 = apparition franche
   fade_steps: 4        # paliers du fondu des cadres ; plus haut = plus doux
-  font_path: null  # ex: "C:/Windows/Fonts/arialbd.ttf" ; requis pour callout/popup sous Windows
+  # Requis sous Windows pour tout effet texte (callout, popup) et pour le
+  # carton d'introduction : FFmpeg y est compilé sans fontconfig.
+  font_path: "C:/Windows/Fonts/arialbd.ttf"
   highlight_color: "yellow"
   callout_color: "white"
   line_width: 4
+
+intro:
+  # Carton placé en tête de la vidéo livrée. Le titre est produit par le LLM
+  # local à partir de la transcription ; renseigner `title` ici le remplace.
+  enabled: true
+  duration_seconds: 5.0
+  fade_seconds: 0.6
+  title: null       # null = titre généré, écrit dans data/intro.json
+  subtitle: null    # null = sous-titre généré
+  background: "0x101418"
+  text_color: "white"
+  title_size: 84
+  subtitle_size: 40
 
 export:
   container: mp4

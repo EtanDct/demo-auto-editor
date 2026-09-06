@@ -27,6 +27,9 @@ data/*
 !data/.gitkeep
 !data/glossary.yaml
 
+# Vidéo de travail produite par l'étape `crop`
+work/
+
 # Models (downloaded on demand, see scripts/download_models.py)
 models/
 

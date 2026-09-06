@@ -32,6 +32,7 @@ from pipeline_config import PROJECT_ROOT, PipelineConfig, load_config
 from schemas import (
     EditDecision,
     Glossary,
+    IntroText,
     NarrationSpec,
     TranscriptSegment,
     TranslationResult,
@@ -198,7 +199,7 @@ def resolve_ui_reference(result: TranslationResult, segment_id: str) -> UiRefere
 
 def translate(
     segments: list[TranscriptSegment], glossary: Glossary, config: PipelineConfig
-) -> list[EditDecision]:
+) -> tuple[list[EditDecision], IntroText | None]:
     llm = load_llm(config)
     decisions = []
     for segment in segments:
@@ -217,7 +218,49 @@ def translate(
                 narration=NarrationSpec(voice=config.tts.voice, pause_before_ms=150, pause_after_ms=250),
             )
         )
-    return decisions
+
+    intro = None
+    try:
+        intro = generate_intro_text(llm, segments, config.llm.temperature)
+    except (ValueError, KeyError) as exc:
+        # Un titre manquant ne doit pas faire échouer la traduction : le rendu
+        # se passera simplement de carton.
+        logger.warning("Titre d'introduction non généré : %s", exc)
+
+    return decisions, intro
+
+
+TITLE_PROMPT = """Tu résumes une vidéo de démonstration logicielle en un titre de carton d'introduction.
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après :
+{"title": <titre en anglais, 2 à 6 mots, sans point final>,
+ "subtitle": <sous-titre en anglais, une courte phrase de 3 à 8 mots, ou "">}
+
+Le titre nomme le sujet ; le sous-titre précise ce que la vidéo montre."""
+
+
+def generate_intro_text(llm, segments: list[TranscriptSegment], temperature: float) -> IntroText:
+    """Titre du carton d'introduction, déduit de la transcription.
+
+    Seul le début de la transcription est envoyé : une démonstration annonce son
+    sujet dans ses premières phrases, et le contexte du modèle est limité.
+    """
+    excerpt = " ".join(s.text_fr for s in segments[:8])[:1500]
+    response = llm.create_chat_completion(
+        messages=[
+            {"role": "system", "content": TITLE_PROMPT},
+            {"role": "user", "content": f"Début de la narration :\n{excerpt}"},
+        ],
+        temperature=temperature,
+        response_format={"type": "json_object"},
+    )
+    return IntroText.model_validate_json(response["choices"][0]["message"]["content"])
+
+
+def write_intro_text(text: IntroText, out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(text.model_dump_json(indent=2), encoding="utf-8")
+    logger.info("Titre d'introduction : %r / %r (%s)", text.title, text.subtitle, out_path)
 
 
 def write_edl(decisions: list[EditDecision], out_path: Path) -> None:
@@ -251,8 +294,10 @@ def main(config_path: Path = typer.Option(None, help="Chemin vers config.yaml.")
         )
     segments = merged
     glossary = load_glossary(PROJECT_ROOT / config.glossary_file)
-    decisions = translate(segments, glossary, config)
+    decisions, intro = translate(segments, glossary, config)
     write_edl(decisions, config.paths.resolve("data_dir") / "edit_decision_list.yaml")
+    if intro is not None:
+        write_intro_text(intro, config.paths.resolve("data_dir") / "intro.json")
 
 
 if __name__ == "__main__":

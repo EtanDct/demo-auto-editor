@@ -25,13 +25,15 @@ STEP_ORDER = [
 
 # Étapes lançables à la demande mais hors du pipeline par défaut : coûteuses et
 # pas encore consommées par le rendu.
+#   crop   : retire le bandeau de navigateur et produit la vidéo de travail ;
+#            à lancer juste après `inspect`, tout l'aval s'y réfère ensuite.
 #   screen : index du texte affiché à l'écran (base du montage automatique),
 #            plusieurs minutes d'OCR selon la durée de la vidéo.
 #   cursor : suivi du pointeur, second signal du montage automatique ;
 #            départage les libellés équivalents. Réutilise les frames de `screen`.
 #   match  : rapproche ce que le narrateur nomme de ce qui est à l'écran et
 #            propose des incrustations ; n'écrit rien sans --apply.
-EXTRA_STEPS = ["screen", "cursor", "match"]
+EXTRA_STEPS = ["crop", "screen", "cursor", "match"]
 ALL_STEPS = STEP_ORDER + EXTRA_STEPS
 
 SIMPLE_STEPS = {
@@ -51,6 +53,10 @@ def _run_step(step: str, config_path: Path | None, input_override: Path | None) 
         config = inspect_source.load_config(config_path)
         video_path = input_override or config.paths.resolve("input_video")
         inspect_source.inspect(video_path, config)
+    elif step == "crop":
+        import crop_chrome
+
+        crop_chrome.main(config_path=config_path)
     elif step == "screen":
         import detect_screen_text
 

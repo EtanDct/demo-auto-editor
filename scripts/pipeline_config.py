@@ -17,6 +17,7 @@ class PathsConfig(BaseModel):
     frames_dir: str
     overlays_dir: str
     models_dir: str
+    work_dir: str
     output_dir: str
     logs_dir: str
 
@@ -30,6 +31,15 @@ class HardwareConfig(BaseModel):
 
 class InspectionConfig(BaseModel):
     thumbnail_interval_seconds: float = 2.0
+
+
+class CropConfig(BaseModel):
+    top: str | int = "auto"
+    max_fraction: float = 0.25
+    run_rows: int = 20
+    sample_fps: float = 1.0
+    sample_frames: int = 120
+    intermediate_crf: int = 14
 
 
 class ScreenTextConfig(BaseModel):
@@ -134,6 +144,18 @@ class OverlaysConfig(BaseModel):
     line_width: int = 4
 
 
+class IntroConfig(BaseModel):
+    enabled: bool = True
+    duration_seconds: float = 5.0
+    fade_seconds: float = 0.6
+    title: str | None = None
+    subtitle: str | None = None
+    background: str = "0x101418"
+    text_color: str = "white"
+    title_size: int = 84
+    subtitle_size: int = 40
+
+
 class ExportConfig(BaseModel):
     container: str = "mp4"
     video_codec: str = "libx264"
@@ -149,6 +171,7 @@ class PipelineConfig(BaseModel):
     paths: PathsConfig
     hardware: HardwareConfig
     inspection: InspectionConfig
+    crop: CropConfig
     screen_text: ScreenTextConfig
     whisper: WhisperConfig
     llm: LlmConfig
@@ -159,6 +182,7 @@ class PipelineConfig(BaseModel):
     cursor_overlay: CursorOverlayConfig
     overlay_matching: OverlayMatchingConfig
     overlays: OverlaysConfig
+    intro: IntroConfig
     export: ExportConfig
     glossary_file: str
 

@@ -301,3 +301,10 @@ class CursorTrack(BaseModel):
 
     sample_fps: float
     samples: list[CursorSample] = Field(default_factory=list)
+
+
+class IntroText(BaseModel):
+    """Titre du carton d'introduction (`data/intro.json`), produit à l'étape C."""
+
+    title: str = Field(min_length=1)
+    subtitle: str = ""

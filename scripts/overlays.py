@@ -36,7 +36,9 @@ Ken Burns), ce qui demanderait `zoompan` et une refonte de la chaîne.
 
 from __future__ import annotations
 
+import hashlib
 import platform
+from pathlib import Path
 
 from schemas import VisualAction
 
@@ -46,8 +48,31 @@ BOX_PEAK_ALPHA = 0.9
 TEXT_PEAK_ALPHA = 1.0
 
 
-def _escape_text(text: str) -> str:
-    return text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+def escape_path(path: Path | str) -> str:
+    """Chemin utilisable dans un argument de filtre FFmpeg."""
+    return str(path).replace("\\", "/").replace(":", "\\:")
+
+
+def text_source(text: str, config: PipelineConfig) -> str:
+    """Argument FFmpeg portant un libellé, via un fichier plutôt qu'en ligne.
+
+    L'apostrophe est inéchappable dans un argument de filtre. FFmpeg ne traite
+    aucun échappement à l'intérieur d'une section entre apostrophes, et hors
+    quotes aucune des formes essayées ne passe : `\\'`, `\\\\'`, et l'idiome
+    `'\\''` des shells POSIX font échouer le filter_complex ou font carrément
+    planter drawtext (0xC0000005). Or un libellé venu de l'OCR ou du LLM
+    contient couramment « What's new » ou « d'accueil ».
+
+    `textfile=` lit le libellé dans un fichier et ne demande aucun
+    échappement. Le nom du fichier dérive du contenu : deux libellés
+    identiques partagent le même, et rejouer un rendu produit les mêmes
+    fichiers.
+    """
+    directory = config.paths.resolve("work_dir") / "text"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{hashlib.sha1(text.encode('utf-8')).hexdigest()[:16]}.txt"
+    path.write_text(text, encoding="utf-8")
+    return f"textfile='{escape_path(path)}'"
 
 
 def _fontfile_arg(config: PipelineConfig, action_type: str) -> str:
@@ -66,8 +91,7 @@ def _fontfile_arg(config: PipelineConfig, action_type: str) -> str:
                 'overlays.font_path dans config.yaml, par exemple "C:/Windows/Fonts/arialbd.ttf".'
             )
         return ""
-    escaped = config.overlays.font_path.replace("\\", "/").replace(":", "\\:")
-    return f":fontfile='{escaped}'"
+    return f":fontfile='{escape_path(config.overlays.font_path)}'"
 
 
 def resolve_window(
@@ -179,7 +203,7 @@ def _text(
     start, end = window
     alpha = _text_alpha(window, _fade_span(window, config.overlays.fade_seconds), TEXT_PEAK_ALPHA)
     return (
-        f"drawtext=text='{_escape_text(va.target)}'{_fontfile_arg(config, va.type)}:"
+        f"drawtext={text_source(va.target, config)}{_fontfile_arg(config, va.type)}:"
         f"fontsize={font_size}:fontcolor={config.overlays.callout_color}:"
         f"x={x_expr}:y={y_expr}:"
         f"box=1:boxcolor=black@{box_opacity}:boxborderw=8:"

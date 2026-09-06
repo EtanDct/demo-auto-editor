@@ -36,6 +36,7 @@ import typer
 from build_narration import load_edl
 from build_timeline import load_narration_manifest
 from cursor_overlays import cursor_filter_for
+from intro_card import prepend_intro
 from detect_cursor import load_track
 from match_overlays import load_screen_index
 from overlays import overlay_filter_for
@@ -324,6 +325,8 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
 
     logger.info("Rendu du master vers %s", final_path)
     subprocess.run(cmd, check=True)
+
+    prepend_intro(final_path, config, width, height, inspection["fps"])
 
     preview_cmd = [
         "ffmpeg", "-y", "-i", str(final_path),
