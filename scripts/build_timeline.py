@@ -4,13 +4,17 @@ Calcule les nouveaux intervalles à partir de la durée réelle de chaque
 segment de narration, en parcourant les segments dans l'ordre chronologique
 source et en suivant l'ordre de priorité du plan technique :
 
+0. si le plan dépasse largement ce qu'il y a à dire, il est raccourci : le
+   surplus n'est que du blanc, et tout ce qui suit est avancé d'autant ;
 1. pauses (déjà dans le conducteur, non modifiées ici) ;
 2. vitesse audio, très légèrement, dans les bornes de config.yaml ;
-3. si la vitesse seule ne suffit pas, extension du plan vidéo (le segment
-   est marqué `extended`, à traiter par le rendu en figeant la dernière
+3. si la vitesse seule ne suffit pas, accélération au maximum autorisé
+   PUIS extension du plan vidéo de ce qui manque encore (le segment est
+   marqué `extended`, à traiter par le rendu en figeant la dernière
    image) : tous les segments suivants sont alors décalés d'autant, pour
    que la timeline finale reste strictement séquentielle et sans
-   chevauchement.
+   chevauchement. L'extension est calculée sur la durée *accélérée* de la
+   narration, sinon le plan reste gelé pour rien.
 
 Détecte aussi les chevauchements entre segments source (avant tout
 décalage), condition nécessaire avant de construire la timeline finale.
@@ -80,13 +84,31 @@ def build_timeline(
         )
 
         if total_audio_duration <= source_duration:
+            # Plan plus long que ce qu'il y a à dire : le surplus est du blanc.
+            # Au-delà de `max_slack_seconds`, on raccourcit le plan et on avance
+            # tout ce qui suit. Mesuré sur l'extrait de référence : 19 s de blanc
+            # sur 9 segments, dont 6.2 s dès le premier plan.
+            slack = source_duration - total_audio_duration
+            kept = source_duration
+            if slack > config.retiming.max_slack_seconds:
+                kept = max(
+                    total_audio_duration + config.retiming.max_slack_seconds,
+                    config.retiming.min_shot_seconds,
+                )
+                kept = min(kept, source_duration)
+                cumulative_shift -= source_duration - kept
+                warnings.append(
+                    f"{decision.id} : plan de {source_duration:.2f}s pour "
+                    f"{total_audio_duration:.2f}s de narration ; raccourci à {kept:.2f}s "
+                    f"({source_duration - kept:.2f}s de blanc retirés)."
+                )
             entries.append(
                 TimelineEntry(
                     id=decision.id,
                     source_start=decision.source_start,
                     source_end=decision.source_end,
                     new_start=adjusted_start,
-                    new_end=adjusted_end,
+                    new_end=adjusted_start + kept,
                     narration_duration=narration.duration,
                 )
             )
@@ -107,12 +129,20 @@ def build_timeline(
             )
             continue
 
-        # La vitesse seule ne suffit pas dans les bornes acceptables :
-        # on étend le plan vidéo et on décale tous les segments suivants d'autant.
-        new_end = adjusted_start + total_audio_duration
+        # La vitesse seule ne suffit pas dans les bornes acceptables : on
+        # accélère au maximum autorisé, PUIS on étend le plan vidéo de ce qui
+        # manque encore. La durée à couvrir est celle réellement jouée une fois
+        # accélérée (`played_duration`), pas la durée brute de la narration :
+        # sinon le plan reste gelé du facteur d'accélération en trop à chaque
+        # extension (~0.4s par segment, 6.3s cumulées sur le premier extrait
+        # réel de 188s).
+        speed = config.retiming.max_speed_factor
+        played_duration = total_audio_duration / speed
+        new_end = adjusted_start + played_duration
         extension = new_end - adjusted_end
         cumulative_shift += extension
-        extension_ratio = total_audio_duration / source_duration
+        # Ratio d'étirement réel du plan vidéo (1.0 = plan source inchangé).
+        extension_ratio = played_duration / source_duration
         entries.append(
             TimelineEntry(
                 id=decision.id,
@@ -121,15 +151,16 @@ def build_timeline(
                 new_start=adjusted_start,
                 new_end=new_end,
                 narration_duration=narration.duration,
-                audio_speed_factor=config.retiming.max_speed_factor,
+                audio_speed_factor=speed,
                 extended=True,
                 needs_review=extension_ratio > 1.2,
             )
         )
         warnings.append(
-            f"{decision.id} : narration ({total_audio_duration:.2f}s) dépasse le plan source "
-            f"({source_duration:.2f}s) au-delà de la vitesse max autorisée ; plan étendu de "
-            f"{extension:.2f}s (segments suivants décalés d'autant), needs_review={extension_ratio > 1.2}."
+            f"{decision.id} : narration ({total_audio_duration:.2f}s, {played_duration:.2f}s "
+            f"une fois accélérée à x{speed}) dépasse le plan source ({source_duration:.2f}s) ; "
+            f"plan étendu de {extension:.2f}s (segments suivants décalés d'autant), "
+            f"needs_review={extension_ratio > 1.2}."
         )
 
     return TimelineReport(entries=entries, warnings=warnings)

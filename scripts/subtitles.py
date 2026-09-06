@@ -5,8 +5,10 @@ des timecodes finaux de data/timeline.json (après recalage, étape E) :
 
 - deux lignes maximum, longueur limitée par ligne ;
 - segmentation greedy alignée sur les mots (pas de coupure en milieu de mot) ;
-- si le texte ne tient pas dans les lignes autorisées, il est tronqué et un
-  avertissement est levé (texte à raccourcir manuellement dans l'EDL).
+- un texte trop long pour un seul sous-titre est réparti sur plusieurs, le
+  temps du segment étant partagé au prorata du nombre de mots. Il n'est jamais
+  tronqué : des mots qui disparaissent de la vidéo livrée ne se voient pas au
+  contrôle automatique.
 """
 
 from __future__ import annotations
@@ -35,31 +37,39 @@ def load_timeline(path: Path) -> dict[str, TimelineEntry]:
     return {e.id: e for e in entries}
 
 
-def wrap_text(text: str, max_chars_per_line: int, max_lines: int) -> list[str]:
-    words = text.split()
+def wrap_lines(text: str, max_chars_per_line: int) -> list[str]:
+    """Découpe le texte en lignes, sur les mots, sans jamais rien perdre."""
     lines: list[str] = []
     current = ""
-    for word in words:
+    for word in text.split():
         candidate = f"{current} {word}".strip()
-        if len(candidate) <= max_chars_per_line:
+        if len(candidate) <= max_chars_per_line or not current:
             current = candidate
         else:
-            if current:
-                lines.append(current)
+            lines.append(current)
             current = word
-        if len(lines) == max_lines:
-            break
-    if current and len(lines) < max_lines:
+    if current:
         lines.append(current)
-
-    consumed_words = sum(len(line.split()) for line in lines)
-    if consumed_words < len(words):
-        logger.warning(
-            "Sous-titre tronqué (%d/%d mots) : texte trop long pour %d ligne(s) de %d caractères. "
-            "Texte complet : %r",
-            consumed_words, len(words), max_lines, max_chars_per_line, text,
-        )
     return lines
+
+
+def split_into_cues(text: str, max_chars_per_line: int, max_lines: int) -> list[list[str]]:
+    """Répartit le texte en autant de sous-titres que nécessaire.
+
+    Un segment peut désormais couvrir une phrase entière (les segments Whisper
+    sont recollés avant traduction), et son texte dépasse souvent ce que deux
+    lignes peuvent porter. L'ancienne version tronquait alors le texte, avec un
+    simple avertissement : des mots disparaissaient de la vidéo livrée. On
+    produit plutôt plusieurs sous-titres successifs.
+    """
+    lines = wrap_lines(text, max_chars_per_line)
+    return [lines[i : i + max_lines] for i in range(0, len(lines), max_lines)] or []
+
+
+def wrap_text(text: str, max_chars_per_line: int, max_lines: int) -> list[str]:
+    """Premier sous-titre seulement. Conservé pour les appels qui n'en veulent qu'un."""
+    cues = split_into_cues(text, max_chars_per_line, max_lines)
+    return cues[0] if cues else []
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -83,16 +93,27 @@ def build_srt(
             logger.warning("Pas d'entrée timeline pour %s, sous-titre ignoré.", decision.id)
             continue
 
-        lines = wrap_text(decision.text_en, config.subtitles.max_chars_per_line, config.subtitles.max_lines)
-        if not lines:
+        cues = split_into_cues(
+            decision.text_en, config.subtitles.max_chars_per_line, config.subtitles.max_lines
+        )
+        if not cues:
             continue
 
-        blocks.append(
-            f"{index}\n"
-            f"{_format_timestamp(entry.new_start)} --> {_format_timestamp(entry.new_end)}\n"
-            f"{chr(10).join(lines)}\n"
-        )
-        index += 1
+        # Le temps du segment est réparti au prorata du nombre de mots : un
+        # sous-titre dense reste affiché plus longtemps qu'un sous-titre court.
+        weights = [sum(len(line.split()) for line in cue) or 1 for cue in cues]
+        total_weight = sum(weights)
+        span = entry.new_end - entry.new_start
+        cursor = entry.new_start
+        for cue, weight in zip(cues, weights):
+            end = cursor + span * weight / total_weight
+            blocks.append(
+                f"{index}\n"
+                f"{_format_timestamp(cursor)} --> {_format_timestamp(end)}\n"
+                f"{chr(10).join(cue)}\n"
+            )
+            index += 1
+            cursor = end
 
     return "\n".join(blocks)
 

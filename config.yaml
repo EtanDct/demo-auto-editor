@@ -9,6 +9,7 @@ paths:
   frames_dir: frames
   overlays_dir: overlays
   models_dir: models
+  work_dir: work
   output_dir: output
   logs_dir: logs
 
@@ -19,6 +20,42 @@ hardware:
 
 inspection:
   thumbnail_interval_seconds: 2.0
+
+crop:
+  # Retrait du bandeau de navigateur (onglets, URL, favoris), pour ne garder
+  # que la page présentée. Rien de la mise en page n'est supposé : la frontière
+  # est mesurée sur chaque vidéo, là où l'image cesse d'être figée.
+  #   auto  : détection (défaut)
+  #   off   : ne rien rogner
+  #   <n>   : imposer n pixels, une fois la valeur mesurée sur une série
+  top: auto
+  # Plafond de sécurité. Au-delà, on refuse de rogner : une bande figée aussi
+  # haute est plus probablement un en-tête applicatif (la barre supérieure de
+  # SAP Fiori fait partie du produit) qu'un bandeau de navigateur.
+  max_fraction: 0.25
+  run_rows: 20          # lignes consécutives de contenu exigées pour trancher
+  sample_fps: 1.0       # échantillonnage pour la mesure
+  sample_frames: 120    # nombre d'images retenues
+  intermediate_crf: 14  # qualité de la vidéo de travail (réencodée ensuite)
+
+screen_text:
+  # Index du texte affiché à l'écran (étape `screen`), base du montage automatique.
+  sample_fps: 2.0          # échantillonnage temporel de la vidéo
+  min_confidence: 0.6      # en dessous, la détection OCR est ignorée
+  min_text_length: 2       # écarte le bruit d'OCR sur les icônes (symboles isolés)
+  # L'OCR n'est relancé que si l'écran a bougé, sinon la frame hérite des
+  # détections précédentes. Le seuil porte sur la PROPORTION de pixels touchés,
+  # pas sur l'écart moyen : les changements utiles sont localisés.
+  change_pixel_delta: 25   # écart par pixel (0-255) au-delà duquel il a changé
+  change_ratio: 0.0005     # 0.05 % des pixels ; plus bas = plus précis et plus lent
+  # Plafond de coût : sur une source au mouvement permanent (lecteur vidéo,
+  # animation, webcam incrustée) toutes les frames franchiraient le seuil. Le
+  # seuil est alors relevé automatiquement pour tenir sous ce plafond, ce qui
+  # borne la durée de l'étape (~5 s d'OCR par frame) quel que soit le contenu.
+  max_ocr_frames: 200
+  merge_iou: 0.6           # recouvrement minimal pour considérer deux détections
+                           # de frames différentes comme le même élément
+  max_gap_seconds: 1.0     # au-delà, un élément revu est un nouvel élément
 
 whisper:
   # tiny (tests rapides) / small (défaut) / medium (précision accrue)
@@ -34,6 +71,10 @@ llm:
   n_ctx: 8192
   n_gpu_layers: auto
   temperature: 0.2
+  # Durée maximale d'un segment après recollage des phrases coupées par
+  # Whisper. Au-delà, le sous-titre devient illisible et le recalage perd sa
+  # marge de manœuvre.
+  max_segment_seconds: 14.0
 
 tts:
   engine: piper
@@ -45,17 +86,117 @@ retiming:
   max_speed_factor: 1.08
   min_speed_factor: 0.95
   min_pause_ms: 80
+  # Blanc toléré à la fin d'un plan avant de le raccourcir. Un plan qui dure
+  # bien plus longtemps que ce qu'il y a à dire laisse la vidéo tourner à vide.
+  max_slack_seconds: 0.8
+  min_shot_seconds: 1.2   # jamais raccourcir un plan en dessous de ça
 
 subtitles:
   max_chars_per_line: 42
   max_lines: 2
   font_path: null  # ex: "C:/Windows/Fonts/arial.ttf" ; null = police par défaut FFmpeg
 
+cursor:
+  # Suivi du pointeur (étape `cursor`), second signal du montage automatique.
+  # Aucun gabarit de curseur : on cherche une petite zone qui se déplace, ce qui
+  # reste vrai quels que soient la forme du pointeur, le thème et la résolution.
+  # Échantillonnage propre, bien plus fin que celui de l'OCR : une souris se
+  # déplace en continu, et un marqueur qui la suit par sauts d'une demi-seconde
+  # saute à l'écran. Aucun OCR ici, seulement des écarts d'images (~12 ms).
+  sample_fps: 8.0
+  pixel_delta: 25              # écart par pixel au-delà duquel il a changé
+  min_area_fraction: 0.00002   # ~40 px sur du 1920x1020 : plus petit = bruit
+  max_area_fraction: 0.002     # ~4000 px : plus grand = ce n'est pas un pointeur
+  match_tolerance_fraction: 0.01  # tolérance d'appariement entre deux écarts
+  hold_seconds: 2.0            # durée pendant laquelle une position reste valable
+
+cursor_overlay:
+  # Incrustations pilotées par la souris. Contrairement à `overlay_matching`,
+  # elles ne dépendent d'aucune correspondance de texte : ce qui est montré est
+  # déduit de ce que fait le pointeur, donc valable quelle que soit la langue de
+  # l'interface et quoi que dise le narrateur.
+  enabled: true
+
+  # La détection ne voit le pointeur que lorsqu'il bouge : un silence signifie
+  # qu'il est resté en place, pas qu'on l'a perdu. Sa dernière position tient
+  # donc jusqu'au relevé suivant, dans cette limite (au-delà, la souris a pu
+  # quitter la fenêtre sans qu'on le sache).
+  max_hold_seconds: 6.0
+  hover_step_seconds: 0.125  # pas de la grille où l'on cherche les survols
+
+  # Marqueur qui suit le pointeur. Désactivé : il produit trop de faux
+  # positifs, constaté à l'usage. Deux causes, la seconde rédhibitoire :
+  #   - il est décalé d'une trentaine de pixels, la détection situant le centre
+  #     de la tache en mouvement quand le point actif d'une flèche est sa pointe ;
+  #   - surtout, il reste affiché sur la dernière position tenue (jusqu'à
+  #     `max_hold_seconds`), donc figé là où la souris n'est plus. Tenir la
+  #     position vaut pour déduire un survol, corroboré par l'élément qui se
+  #     trouve dessous ; ça ne vaut pas pour un marqueur qui affirme où est la
+  #     souris.
+  # Le remettre à true suppose de ne le dessiner que sur les intervalles
+  # réellement détectés, pas sur les positions tenues.
+  follow_enabled: false
+  marker_size: 0.055        # côté du cadre, en fraction de l'image
+  marker_color: "cyan"
+  marker_opacity: 0.7
+  marker_thickness: 2
+
+  # Cadre sur le libellé que la souris survole.
+  hover_enabled: true
+  hover_max_distance: 0.012 # le pointeur doit être sur le libellé, pas à côté
+  hover_max_box_area: 0.05  # au-delà, l'OCR a capturé un bloc, pas un contrôle
+  hover_max_box_width: 0.22 # un contrôle est étroit ; au-delà c'est une phrase
+  hover_max_chars: 30       # idem, mesuré sur le libellé lu
+  min_hover_seconds: 0.35   # un survol plus bref = la souris ne fait que passer
+  hover_join_seconds: 0.5   # tolérance de trou pour prolonger un même survol
+  hover_tail_seconds: 0.4   # le cadre survit un instant au départ de la souris
+  hover_padding: 0.004      # marge autour du libellé
+  hover_color: "yellow"
+  hover_opacity: 0.9
+  hover_thickness: 4
+
+overlay_matching:
+  # Appariement entre ce que le narrateur nomme (ui_reference) et ce que l'OCR
+  # a lu à l'écran. Réglé pour la précision, pas pour le rappel : une
+  # incrustation au mauvais endroit décrédibilise toute la vidéo, une
+  # incrustation manquante ne se voit pas.
+  min_score: 0.75              # en dessous, le libellé ne correspond pas assez
+  ambiguity_margin: 0.1        # deux candidats à moins de ça = ambigu, on renonce
+  # Le pointeur ne départage que s'il est SUR le candidat : la boîte OCR ne
+  # couvre que le texte, pas toute la zone cliquable, d'où une marge étroite.
+  # Plus large (0.06 testé), un pointeur qui passe à côté suffisait à trancher.
+  cursor_max_distance: 0.02    # 0 = désactive l'arbitrage par le pointeur
+  min_visible_fraction: 0.5    # l'élément doit être affiché la moitié du segment
+  min_box_area: 0.0002         # sous ce seuil, boîte trop petite pour être crédible
+  max_box_area: 0.25           # au-dessus, l'OCR a capturé un bloc, pas un contrôle
+  time_margin_seconds: 1.0     # tolérance autour du segment (le narrateur anticipe)
+  action_type: highlight       # effet posé sur les correspondances retenues
+
 overlays:
-  font_path: null  # ex: "C:/Windows/Fonts/arialbd.ttf" ; requis pour callout/popup sous Windows
+  # Fondu d'entrée/sortie des effets minutés. drawtext fond réellement (son
+  # alpha accepte une expression) ; drawbox ne sait animer ni son alpha ni son
+  # épaisseur, son fondu est donc approché par paliers d'opacité.
+  fade_seconds: 0.25   # 0 = apparition franche
+  fade_steps: 4        # paliers du fondu des cadres ; plus haut = plus doux
+  # Requis sous Windows pour tout effet texte (callout, popup) et pour le
+  # carton d'introduction : FFmpeg y est compilé sans fontconfig.
+  font_path: "C:/Windows/Fonts/arialbd.ttf"
   highlight_color: "yellow"
   callout_color: "white"
   line_width: 4
+
+intro:
+  # Carton placé en tête de la vidéo livrée. Le titre est produit par le LLM
+  # local à partir de la transcription ; renseigner `title` ici le remplace.
+  enabled: true
+  duration_seconds: 5.0
+  fade_seconds: 0.6
+  title: null       # null = titre généré, écrit dans data/intro.json
+  subtitle: null    # null = sous-titre généré
+  background: "0x101418"
+  text_color: "white"
+  title_size: 84
+  subtitle_size: 40
 
 export:
   container: mp4
@@ -64,5 +205,9 @@ export:
   audio_sample_rate: 48000
   crf: 18
   preview_max_height: 480
+  # Loudness du rendu final (EBU R128). -16 LUFS est la cible usuelle des
+  # plateformes web ; -14 sonne plus fort, -23 est la norme broadcast.
+  loudness_lufs: -16
+  true_peak_db: -1.5
 
 glossary_file: data/glossary.yaml

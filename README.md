@@ -19,6 +19,57 @@ vidéo source
   -> FFmpeg (montage, overlays, sous-titres)
 ```
 
+L'étape optionnelle `crop` retire au préalable le bandeau du navigateur —
+onglets, URL, favoris — pour ne garder que la page présentée. Aucune mise en
+page n'est supposée : la frontière est mesurée sur chaque vidéo, là où l'image
+cesse d'être figée. Elle produit une vidéo de travail sur laquelle tout l'aval
+se recale, et une image de contrôle dans `logs/crop_preview.jpg`.
+
+Deux briques préparent le montage automatique (synchroniser une incrustation
+avec le moment où le narrateur désigne un élément d'interface) :
+
+- l'étape optionnelle `screen` indexe par OCR local le texte affiché et à quel
+  moment (`data/screen_elements.json`) ;
+- l'étape `translate` fait déclarer au LLM, pour chaque segment, ce que le
+  narrateur désigne (`ui_reference`) : un élément **nommé** par son libellé,
+  une simple **position** ("en haut à gauche"), ou **rien** ;
+- l'étape `cursor` suit le pointeur de souris (`data/cursor_track.json`), signal
+  indépendant du texte donc insensible au décalage de langue entre la narration
+  et l'interface.
+
+L'étape `match` rapproche le tout et propose une incrustation quand la
+correspondance ne laisse pas de place au doute. Elle est réglée pour la
+précision, pas pour le rappel : elle refuse sur score insuffisant, sur
+ambiguïté (le même libellé affiché à deux endroits), sur élément trop fugace ou
+sur boîte aberrante, et consigne le motif de chaque refus. Seule la position du
+pointeur peut sauver un candidat écarté pour ambiguïté, et uniquement si elle
+tombe **sur** lui : le pointeur ne fabrique jamais une correspondance à partir
+de rien et ne renverse jamais un appariement déjà net. Rien n'atteint le
+conducteur de montage sans `--apply`, et `--contact-sheet` produit une planche
+de relecture (cadre dessiné sur la frame, légende avec score et durée
+d'affichage) : valider une correspondance à l'œil prend deux secondes, saisir
+les coordonnées à la main en prend deux minutes.
+
+La distinction nommé / position est ce qui évite d'encadrer « Top
+repositories » parce que le narrateur a dit « en haut de la page ».
+
+Une incrustation retenue ne couvre que la portion du segment où l'élément est
+effectivement affiché (`start_offset` / `end_offset` de `visual_action`), avec
+un fondu d'entrée et de sortie.
+
+**Les incrustations pilotées par la souris** (`cursor_overlay` dans
+`config.yaml`) ne passent pas par l'appariement du tout : le libellé sur lequel
+la souris se pose est encadré. Comme rien n'y dépend du texte prononcé, elles
+fonctionnent quelle que soit la langue de l'interface et quoi que dise le
+narrateur — c'est la voie qui produit effectivement des incrustations
+aujourd'hui.
+
+Un marqueur suivant le pointeur existe aussi (`follow_enabled`) mais est
+désactivé : il reste figé sur la dernière position tenue pendant les creux de
+détection, donc là où la souris n'est plus. Tenir la position vaut pour déduire
+un survol, corroboré par l'élément qui se trouve dessous ; pas pour un marqueur
+qui prétend dire où est la souris.
+
 ## Prérequis
 
 - **FFmpeg / FFprobe** (moteur de montage, extraction audio, ffprobe pour les métadonnées)
@@ -75,22 +126,104 @@ python run.py --step retime
 python run.py --step subtitles
 python run.py --step render
 python run.py --step validate
+
+# Hors pipeline par défaut : retrait du bandeau de navigateur
+python run.py --step crop
+
+# Hors pipeline par défaut : index OCR du texte à l'écran (plusieurs minutes)
+python run.py --step screen
+python scripts/detect_screen_text.py --max-seconds 40   # essai sur une tranche
+python scripts/detect_screen_text.py --regroup          # re-règle sans relancer l'OCR
+
+# Hors pipeline par défaut : suivi du pointeur (réutilise les frames de `screen`)
+python run.py --step cursor
+
+# Hors pipeline par défaut : appariement narrateur / écran
+python run.py --step match                              # rapport seul
+python scripts/match_overlays.py --contact-sheet        # + planche de relecture
+python scripts/match_overlays.py --apply                # reporter dans l'EDL
 ```
+
+Les étapes lisent et écrivent les fichiers de `data/` : après correction d'un
+conducteur de montage à la main, il suffit de reprendre à `retime`.
 
 ## Organisation du dépôt
 
 ```
 input/       vidéo source (non versionnée)
-data/        métadonnées, transcription, conducteur de montage, sous-titres
+data/        métadonnées, transcription, conducteur de montage, sous-titres,
+             index du texte à l'écran
 audio/       audio source et narration générée (non versionné)
 frames/      vignettes extraites (non versionné)
 overlays/    assets d'incrustation (zoom, highlight, callout...)
+work/        vidéo recadrée et carton d'intro (non versionné)
 scripts/     étapes du pipeline
 output/      rendus finaux (non versionné)
 logs/        journaux d'exécution
 models/      poids des modèles téléchargés (non versionné)
 ```
 
+## Carton d'introduction
+
+La vidéo livrée s'ouvre sur un carton de cinq secondes. Le titre est produit par
+le LLM local à partir du début de la transcription et écrit dans
+`data/intro.json` ; `intro.title` et `intro.subtitle` dans `config.yaml` le
+remplacent sans relancer la traduction, et `intro.enabled: false` le supprime.
+
+Le carton est encodé à part aux paramètres exacts du master puis collé devant
+lui sans réencodage : rien à décaler côté audio, sous-titres ou timeline.
+
+## Tests
+
+La logique métier pure (recalage temporel, découpage source, construction des
+filtres FFmpeg, sous-titres) est couverte par des tests qui n'invoquent ni
+FFmpeg ni les modèles :
+
+```bash
+python -m pytest
+```
+
 ## État du projet
 
-Toutes les étapes du pipeline (A à H) sont implémentées. La logique métier (recalage temporel, construction des filtres FFmpeg, sous-titres) a été testée avec des données synthétiques, mais aucun passage bout en bout n'a encore été fait avec une vraie vidéo, les modèles téléchargés et FFmpeg réellement invoqué — c'est la prochaine étape.
+Toutes les étapes du pipeline (A à H) sont implémentées et **un passage bout en
+bout a été fait sur un extrait réel** (2 min 47 s, 34 segments) : modèles
+téléchargés, FFmpeg réellement invoqué, `output/final.mp4` produit et validé
+par l'étape `validate`.
+
+Ce que ce passage a corrigé :
+
+- désynchronisation vidéo/audio sur source à débit d'images variable (`fps=`
+  forcé avant `tpad`) ;
+- gel de plan surdimensionné au recalage : l'extension était calculée sur la
+  durée brute de la narration alors que l'audio est joué accéléré (~6 s
+  d'image figée inutile sur 188 s) ;
+- `drawbox` recevait des variables `main_w` / `main_h` qui n'existent pas dans
+  ce filtre : le premier `visual_action` renseigné faisait échouer tout le
+  rendu.
+
+Ce qui reste à valider :
+
+- **montage automatique** : la chaîne `screen` / `cursor` -> `translate` ->
+  `match` est en place, mais l'extrait de référence ne permet pas de la valider.
+  Le narrateur y décrit au lieu de nommer, et l'interface est en anglais alors
+  que la narration est en français : sur 34 segments, 11 désignent un élément
+  nommé, aucun n'est retrouvable à l'écran, et `match` en retient donc 0 —
+  comportement correct sur cette vidéo, mais qui ne prouve pas que les seuils
+  sont bons. Chaque brique est donc vérifiée séparément sur les données réelles :
+  appariement (contrôle positif "Pull requests", score 1.00, boîte correcte),
+  détection du pointeur (6 positions sur 6 justes, flèche comme main), et
+  concordance des repères (36 des 86 positions du pointeur tombent dans la boîte
+  d'un libellé, 22 autres à moins de 0.02). Il faut un extrait où le narrateur
+  nomme des libellés écrits à l'écran, dans la même langue, pour mesurer
+  précision et rappel.
+- **incrustations visuelles** : `visual_action` est toujours à `null` en sortie
+  de l'étape `translate` et doit être renseigné à la main (ou par `match
+  --apply`). `highlight` est exercé sur du réel, minutage et fondu compris ;
+  `zoom`, `callout`, `popup` et `cursor_emphasis` ne le sont pas encore. Les
+  effets texte (`callout`, `popup`) exigent `overlays.font_path` sous Windows,
+  et un `zoom` ne peut pas être minuté (FFmpeg n'expose pas `crop` à la
+  timeline).
+- **terminologie SAP** : le glossaire est vide et l'extrait de test ne porte pas
+  sur SAP — le cœur métier du projet n'a donc encore rien validé.
+- **découpage des phrases** : Whisper coupe au milieu des phrases et chaque
+  segment part au LLM isolément, ce qui produit des traductions fragmentées.
