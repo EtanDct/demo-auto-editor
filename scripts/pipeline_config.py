@@ -58,6 +58,7 @@ class LlmConfig(BaseModel):
     n_ctx: int = 8192
     n_gpu_layers: str | int = "auto"
     temperature: float = 0.2
+    max_segment_seconds: float = 14.0
 
 
 class TtsConfig(BaseModel):
@@ -71,6 +72,8 @@ class RetimingConfig(BaseModel):
     max_speed_factor: float = 1.08
     min_speed_factor: float = 0.95
     min_pause_ms: int = 80
+    max_slack_seconds: float = 0.8
+    min_shot_seconds: float = 1.2
 
 
 class SubtitlesConfig(BaseModel):
@@ -138,6 +141,8 @@ class ExportConfig(BaseModel):
     audio_sample_rate: int = 48000
     crf: int = 18
     preview_max_height: int = 480
+    loudness_lufs: float = -16
+    true_peak_db: float = -1.5
 
 
 class PipelineConfig(BaseModel):

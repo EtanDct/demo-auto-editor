@@ -45,14 +45,45 @@ def run(decisions, narrations, config):
     return build_timeline(decisions, {n.segment_id: n for n in narrations}, config)
 
 
-def test_narration_plus_courte_que_le_plan_laisse_le_plan_intact(config):
-    report = run([make_decision("seg-001", 0.0, 10.0)], [make_narration("seg-001", 6.0)], config)
+def test_un_leger_blanc_en_fin_de_plan_est_tolere(config):
+    """Raccourcir pour quelques dixièmes de seconde hacherait le montage."""
+    narration = 10.0 - config.retiming.max_slack_seconds / 2
+    report = run([make_decision("seg-001", 0.0, 10.0)], [make_narration("seg-001", narration)], config)
 
     (entry,) = report.entries
     assert (entry.new_start, entry.new_end) == (0.0, 10.0)
     assert entry.audio_speed_factor == 1.0
     assert not entry.extended
     assert report.warnings == []
+
+
+def test_un_plan_qui_tourne_a_vide_est_raccourci(config):
+    """Le premier plan de l'extrait de référence durait 11s pour 4.8s de voix :
+    six secondes de vidéo sans rien à dire."""
+    report = run([make_decision("seg-001", 0.0, 10.0)], [make_narration("seg-001", 4.0)], config)
+
+    (entry,) = report.entries
+    assert entry.new_end == pytest.approx(4.0 + config.retiming.max_slack_seconds)
+    assert len(report.warnings) == 1
+
+
+def test_le_raccourcissement_avance_les_segments_suivants(config):
+    decisions = [make_decision("seg-001", 0.0, 10.0), make_decision("seg-002", 10.0, 20.0)]
+    narrations = [make_narration("seg-001", 4.0), make_narration("seg-002", 9.5)]
+
+    first, second = run(decisions, narrations, config).entries
+
+    assert first.new_end == pytest.approx(4.8)
+    assert second.new_start == pytest.approx(4.8)
+    assert second.new_end - second.new_start == pytest.approx(10.0)
+
+
+def test_un_plan_n_est_jamais_reduit_sous_le_minimum(config):
+    """Un plan d'une fraction de seconde serait illisible."""
+    report = run([make_decision("seg-001", 0.0, 10.0)], [make_narration("seg-001", 0.1)], config)
+
+    (entry,) = report.entries
+    assert entry.new_end - entry.new_start == pytest.approx(config.retiming.min_shot_seconds)
 
 
 def test_les_pauses_comptent_dans_la_duree_a_caser(config):
@@ -68,7 +99,7 @@ def test_les_pauses_comptent_dans_la_duree_a_caser(config):
 def test_depassement_leger_absorbe_par_la_vitesse_seule(config):
     """Un dépassement dans les bornes n'étend pas le plan et ne décale rien."""
     decisions = [make_decision("seg-001", 0.0, 10.0), make_decision("seg-002", 10.0, 20.0)]
-    narrations = [make_narration("seg-001", 10.5), make_narration("seg-002", 5.0)]
+    narrations = [make_narration("seg-001", 10.5), make_narration("seg-002", 9.5)]
 
     report = run(decisions, narrations, config)
 
@@ -104,8 +135,8 @@ def test_extension_decale_les_segments_suivants_sans_chevauchement(config):
     ]
     narrations = [
         make_narration("seg-001", 20.0),
-        make_narration("seg-002", 4.0),
-        make_narration("seg-003", 4.0),
+        make_narration("seg-002", 9.5),
+        make_narration("seg-003", 9.5),
     ]
 
     report = run(decisions, narrations, config)
@@ -140,7 +171,7 @@ def test_extension_importante_demande_une_relecture(config):
 def test_segment_sans_narration_est_ignore_avec_avertissement(config):
     decisions = [make_decision("seg-001", 0.0, 10.0), make_decision("seg-002", 10.0, 20.0)]
 
-    report = run(decisions, [make_narration("seg-001", 5.0)], config)
+    report = run(decisions, [make_narration("seg-001", 9.5)], config)
 
     assert [e.id for e in report.entries] == ["seg-001"]
     assert any("seg-002" in w for w in report.warnings)
@@ -148,7 +179,7 @@ def test_segment_sans_narration_est_ignore_avec_avertissement(config):
 
 def test_segments_traites_dans_l_ordre_source_pas_l_ordre_du_fichier(config):
     decisions = [make_decision("seg-002", 10.0, 20.0), make_decision("seg-001", 0.0, 10.0)]
-    narrations = [make_narration("seg-001", 5.0), make_narration("seg-002", 5.0)]
+    narrations = [make_narration("seg-001", 9.5), make_narration("seg-002", 9.5)]
 
     report = run(decisions, narrations, config)
 

@@ -83,31 +83,82 @@ def test_le_chemin_des_sous_titres_est_echappe_pour_ffmpeg(config, tmp_path):
     assert subtitles_arg.count("\\") == subtitles_arg.count(r"\:")
 
 
-def test_le_filtre_audio_place_chaque_narration_a_son_timecode():
+def test_le_filtre_audio_place_chaque_narration_a_son_timecode(config):
     decisions = [make_decision("seg-001", 0.0, 10.0, pause_before_ms=150)]
     timeline = {"seg-001": make_entry("seg-001", 5.0, 15.0)}
     narrations = {"seg-001": make_narration("seg-001", 8.0)}
 
-    graph, files, label = build_audio_filter(decisions, timeline, narrations, 1, total_duration=20.0)
+    graph, files, label = build_audio_filter(decisions, timeline, narrations, 1, 20.0, config)
 
     assert label == "[aout]"
     assert "[1:a]adelay=delays=5150:all=1[a0]" in graph
-    assert "apad=whole_dur=20.000[aout]" in graph
+    assert "apad=whole_dur=20.000[apadded]" in graph
     assert [f.name for f in files] == ["seg-001.wav"]
 
 
-def test_l_acceleration_est_appliquee_avant_le_decalage():
+def test_l_acceleration_est_appliquee_avant_le_decalage(config):
     """atempo après adelay décalerait aussi le silence d'amorce."""
     decisions = [make_decision("seg-001", 0.0, 10.0)]
     timeline = {"seg-001": make_entry("seg-001", 0.0, 10.0)}
     timeline["seg-001"].audio_speed_factor = 1.08
     narrations = {"seg-001": make_narration("seg-001", 10.5)}
 
-    graph, _, _ = build_audio_filter(decisions, timeline, narrations, 1, total_duration=10.0)
+    graph, _, _ = build_audio_filter(decisions, timeline, narrations, 1, 10.0, config)
 
     assert "[1:a]atempo=1.0800,adelay=delays=0:all=1[a0]" in graph
 
 
-def test_aucun_segment_audio_est_une_erreur_explicite():
+def test_aucun_segment_audio_est_une_erreur_explicite(config):
     with pytest.raises(ValueError, match="Aucun segment audio"):
-        build_audio_filter([], {}, {}, 1, total_duration=10.0)
+        build_audio_filter([], {}, {}, 1, 10.0, config)
+
+
+def test_le_mixage_ne_divise_pas_le_niveau_par_le_nombre_de_pistes(config):
+    """Régression : `amix` divise par défaut par le nombre d'entrées encore
+    actives. Les narrations étant décalées par `adelay`, elles sont toutes
+    actives dès le départ — chacune atténuée de 1/34 — et le niveau remontait
+    au fil des fins de piste. Sur le rendu : -49.5 dB au début, -20.4 dB à la
+    fin. Les narrations ne se recouvrent pas, on les somme telles quelles."""
+    decisions = [make_decision("seg-001", 0.0, 10.0)]
+    timeline = {"seg-001": make_entry("seg-001", 0.0, 10.0)}
+    narrations = {"seg-001": make_narration("seg-001", 8.0)}
+
+    graph, _, _ = build_audio_filter(decisions, timeline, narrations, 1, 10.0, config)
+
+    assert "normalize=0" in graph
+
+
+def test_la_loudness_du_rendu_est_normalisee(config):
+    decisions = [make_decision("seg-001", 0.0, 10.0)]
+    timeline = {"seg-001": make_entry("seg-001", 0.0, 10.0)}
+    narrations = {"seg-001": make_narration("seg-001", 8.0)}
+
+    graph, _, label = build_audio_filter(decisions, timeline, narrations, 1, 10.0, config)
+
+    assert label == "[aout]"
+    assert f"loudnorm=I={config.export.loudness_lufs}" in graph
+    assert f"TP={config.export.true_peak_db}" in graph
+
+
+def test_un_plan_raccourci_coupe_la_fin_du_clip_source():
+    """Le début du plan porte l'action ; la fin n'était que du blanc."""
+    decisions = [make_decision("seg-001", 10.0, 20.0)]
+    entries = [make_entry("seg-001", 10.0, 20.0)]
+    entries[0].new_end = 14.0  # plan ramené à 4s par le recalage
+
+    pieces = build_pieces(decisions, entries, source_duration=30.0)
+
+    segment = pieces[1]
+    assert (segment.start, segment.end) == (10.0, 14.0)
+    assert segment.extension == 0.0
+
+
+def test_le_dernier_intervalle_se_mesure_sur_la_video_entiere():
+    """Régression : une variable locale masquait la durée totale, et le
+    dernier intervalle disparaissait du montage."""
+    decisions = [make_decision("seg-001", 0.0, 10.0)]
+
+    pieces = build_pieces(decisions, [make_entry("seg-001", 0.0, 10.0)], source_duration=40.0)
+
+    assert [p.kind for p in pieces] == ["segment", "gap"]
+    assert pieces[-1].end == 40.0

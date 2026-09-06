@@ -53,6 +53,10 @@ llm:
   n_ctx: 8192
   n_gpu_layers: auto
   temperature: 0.2
+  # Durée maximale d'un segment après recollage des phrases coupées par
+  # Whisper. Au-delà, le sous-titre devient illisible et le recalage perd sa
+  # marge de manœuvre.
+  max_segment_seconds: 14.0
 
 tts:
   engine: piper
@@ -64,6 +68,10 @@ retiming:
   max_speed_factor: 1.08
   min_speed_factor: 0.95
   min_pause_ms: 80
+  # Blanc toléré à la fin d'un plan avant de le raccourcir. Un plan qui dure
+  # bien plus longtemps que ce qu'il y a à dire laisse la vidéo tourner à vide.
+  max_slack_seconds: 0.8
+  min_shot_seconds: 1.2   # jamais raccourcir un plan en dessous de ça
 
 subtitles:
   max_chars_per_line: 42
@@ -164,5 +172,9 @@ export:
   audio_sample_rate: 48000
   crf: 18
   preview_max_height: 480
+  # Loudness du rendu final (EBU R128). -16 LUFS est la cible usuelle des
+  # plateformes web ; -14 sonne plus fort, -23 est la norme broadcast.
+  loudness_lufs: -16
+  true_peak_db: -1.5
 
 glossary_file: data/glossary.yaml

@@ -4,6 +4,8 @@ Calcule les nouveaux intervalles à partir de la durée réelle de chaque
 segment de narration, en parcourant les segments dans l'ordre chronologique
 source et en suivant l'ordre de priorité du plan technique :
 
+0. si le plan dépasse largement ce qu'il y a à dire, il est raccourci : le
+   surplus n'est que du blanc, et tout ce qui suit est avancé d'autant ;
 1. pauses (déjà dans le conducteur, non modifiées ici) ;
 2. vitesse audio, très légèrement, dans les bornes de config.yaml ;
 3. si la vitesse seule ne suffit pas, accélération au maximum autorisé
@@ -82,13 +84,31 @@ def build_timeline(
         )
 
         if total_audio_duration <= source_duration:
+            # Plan plus long que ce qu'il y a à dire : le surplus est du blanc.
+            # Au-delà de `max_slack_seconds`, on raccourcit le plan et on avance
+            # tout ce qui suit. Mesuré sur l'extrait de référence : 19 s de blanc
+            # sur 9 segments, dont 6.2 s dès le premier plan.
+            slack = source_duration - total_audio_duration
+            kept = source_duration
+            if slack > config.retiming.max_slack_seconds:
+                kept = max(
+                    total_audio_duration + config.retiming.max_slack_seconds,
+                    config.retiming.min_shot_seconds,
+                )
+                kept = min(kept, source_duration)
+                cumulative_shift -= source_duration - kept
+                warnings.append(
+                    f"{decision.id} : plan de {source_duration:.2f}s pour "
+                    f"{total_audio_duration:.2f}s de narration ; raccourci à {kept:.2f}s "
+                    f"({source_duration - kept:.2f}s de blanc retirés)."
+                )
             entries.append(
                 TimelineEntry(
                     id=decision.id,
                     source_start=decision.source_start,
                     source_end=decision.source_end,
                     new_start=adjusted_start,
-                    new_end=adjusted_end,
+                    new_end=adjusted_start + kept,
                     narration_duration=narration.duration,
                 )
             )

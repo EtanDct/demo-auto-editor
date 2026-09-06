@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from subtitles import _format_timestamp, build_srt, wrap_text
+from subtitles import _format_timestamp, build_srt, split_into_cues, wrap_text
 from schemas import TimelineEntry
 
 from test_build_timeline import make_decision
@@ -31,11 +31,20 @@ def test_coupure_sur_les_mots_jamais_au_milieu_d_un_mot():
     assert " ".join(lines) == "Select the company code in the corresponding field."
 
 
-def test_texte_trop_long_est_tronque_avec_avertissement(caplog):
-    lines = wrap_text("one two three four five six seven eight nine ten", 12, 2)
+def test_un_texte_trop_long_est_reparti_sur_plusieurs_sous_titres():
+    """Régression : il était tronqué, et des mots disparaissaient de la vidéo
+    livrée sans que rien ne le signale au contrôle automatique."""
+    cues = split_into_cues("one two three four five six seven eight nine ten", 12, 2)
 
-    assert len(lines) == 2
-    assert "tronqué" in caplog.text
+    assert len(cues) > 1
+    assert " ".join(l for cue in cues for l in cue) == "one two three four five six seven eight nine ten"
+
+
+def test_chaque_sous_titre_respecte_les_limites_de_lignes():
+    cues = split_into_cues("one two three four five six seven eight nine ten", 12, 2)
+
+    assert all(len(cue) <= 2 for cue in cues)
+    assert all(len(line) <= 12 for cue in cues for line in cue)
 
 
 def test_mot_plus_long_que_la_ligne_est_conserve_tel_quel():
@@ -73,3 +82,32 @@ def test_segment_absent_de_la_timeline_est_saute_sans_trou_de_numerotation(confi
 
     assert srt.startswith("1\n")
     assert "2\n" not in srt
+
+
+def test_le_temps_du_segment_est_partage_entre_les_sous_titres(config):
+    """Un segment couvre désormais une phrase entière : son texte tient rarement
+    en un seul sous-titre, et les afficher tous en même temps serait illisible."""
+    long_text = " ".join(["word"] * 40)
+    decisions = [make_decision("seg-001", 0.0, 20.0)]
+    decisions[0].text_en = long_text
+    timeline = {"seg-001": make_entry("seg-001", 0.0, 20.0)}
+
+    srt = build_srt(decisions, timeline, config)
+    blocks = srt.strip().split("\n\n")
+
+    assert len(blocks) > 1
+    assert blocks[0].splitlines()[1].startswith("00:00:00,000")
+    assert blocks[-1].splitlines()[1].endswith("00:00:20,000")
+
+
+def test_les_sous_titres_ne_se_chevauchent_pas(config):
+    decisions = [make_decision("seg-001", 0.0, 20.0)]
+    decisions[0].text_en = " ".join(["word"] * 40)
+    timeline = {"seg-001": make_entry("seg-001", 0.0, 20.0)}
+
+    srt = build_srt(decisions, timeline, config)
+    bornes = [b.splitlines()[1] for b in srt.strip().split("\n\n")]
+    fins = [b.split(" --> ")[1] for b in bornes]
+    debuts = [b.split(" --> ")[0] for b in bornes]
+
+    assert debuts[1:] == fins[:-1]

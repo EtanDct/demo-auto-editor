@@ -44,38 +44,46 @@ app = typer.Typer(add_completion=False)
 
 MAX_RETRIES = 3
 
-SYSTEM_PROMPT = """Tu es un traducteur technique spécialisé SAP Fiori (FR -> EN).
+SYSTEM_PROMPT = """Tu adaptes en anglais la narration d'une vidéo de démonstration SAP Fiori.
 
-Pour chaque texte, tu produis DEUX choses.
+Ce n'est pas une traduction mot à mot : c'est une réécriture pour une voix off.
 
-1. La traduction anglaise professionnelle, adaptée à une vidéo de démonstration
-   logicielle, en utilisant en priorité le glossaire fourni.
+1. Le texte anglais doit être BREF et NATUREL, tel qu'un présentateur le dirait.
+   - supprime hésitations, répétitions, bafouillages, « donc », « alors »,
+     « en fait », « voilà », « etc. », et les reprises de la même idée ;
+   - une phrase claire vaut mieux que deux phrases hésitantes ;
+   - vise plus court que l'original : la voix de synthèse est plus lente.
+   - garde le sens et les termes SAP, en priorité ceux du glossaire fourni.
 
-2. Le classement de ce que le narrateur désigne à l'écran :
-   - "named_control" : le narrateur cite le LIBELLÉ d'un élément (bouton,
-     onglet, champ, entrée de menu). Recopie ce libellé seul dans "ui_target",
-     sans mot de position ni mot de catégorie.
-   - "spatial" : le narrateur indique une position ou une catégorie sans citer
-     de libellé. "ui_target" vaut null.
-   - "none" : le narrateur ne montre rien à l'écran. "ui_target" vaut null.
+2. Classe ce que le narrateur désigne à l'écran :
+   - "named_control" : il cite le LIBELLÉ d'un élément (bouton, onglet, champ,
+     entrée de menu). Recopie ce libellé seul dans "ui_target", sans mot de
+     position ni mot de catégorie.
+   - "spatial" : il indique une position ou une catégorie sans citer de
+     libellé. "ui_target" vaut null.
+   - "none" : il ne montre rien. "ui_target" vaut null.
+
+Exemples d'adaptation :
+  "Alors donc euh, on se retrouve sur la page d'accueil, la page d'accueil de Github"
+     -> "Here's the GitHub home page."
+  "et qu'est-ce qu'on peut y retrouver ? Donc sur la gauche, on y retrouve un menu"
+     -> "On the left, there's a menu."
+  "cliquez sur le bouton Enregistrer pour valider"
+     -> "Click Save to confirm."  (named_control, ui_target "Enregistrer")
 
 Exemples de classement :
   "cliquez sur le bouton Enregistrer"        -> named_control, ui_target "Enregistrer"
   "ouvrez l'onglet Écritures à contrôler"    -> named_control, ui_target "Écritures à contrôler"
-  "le champ Société est en haut à droite"    -> named_control, ui_target "Société"
-  "on y retrouve les repositories, les projets" -> named_control, ui_target "Repositories"
   "tout en haut à gauche il y a un bouton"   -> spatial, ui_target null
-  "sur la gauche on retrouve un menu"        -> spatial, ui_target null
   "bonjour à tous et bienvenue"              -> none, ui_target null
 
 Règle d'arbitrage : si un libellé est cité, c'est "named_control", même si la
-phrase donne aussi une position. Si aucun libellé n'est cité mais qu'un élément
-est montré, c'est "spatial".
+phrase donne aussi une position.
 
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après :
 {"reference_kind": <"named_control" ou "spatial" ou "none">,
  "ui_target": <le libellé cité, ou null>,
- "text_en": <la traduction anglaise>,
+ "text_en": <l'adaptation anglaise, brève et naturelle>,
  "sap_terms": [<termes SAP anglais identifiés>]}"""
 
 
@@ -87,6 +95,46 @@ def load_transcript(path: Path) -> list[TranscriptSegment]:
         )
     raw = json.loads(path.read_text(encoding="utf-8"))
     return [TranscriptSegment.model_validate(item) for item in raw]
+
+
+SENTENCE_END = (".", "!", "?", "…", ":")
+
+
+def merge_into_sentences(
+    segments: list[TranscriptSegment], max_seconds: float
+) -> list[TranscriptSegment]:
+    """Recolle les segments que Whisper a coupés en pleine phrase.
+
+    Whisper découpe sur les silences, pas sur la syntaxe : sur l'extrait de
+    référence, 25 segments sur 34 s'arrêtent en milieu de phrase. Traduits
+    isolément, ils donnent des bouts qui ne veulent rien dire — « page » et
+    « d'accueil et qu'est-ce qu'on peut y retrouver ? » deviennent deux
+    fragments sans rapport. Un segment est donc prolongé tant qu'il ne se
+    termine pas sur une ponctuation forte, dans la limite de `max_seconds`
+    (au-delà, le sous-titre serait illisible et le recalage sans marge).
+    """
+    merged: list[TranscriptSegment] = []
+    for segment in sorted(segments, key=lambda s: s.start):
+        previous = merged[-1] if merged else None
+        joinable = (
+            previous is not None
+            and not previous.text_fr.rstrip().endswith(SENTENCE_END)
+            and segment.end - previous.start <= max_seconds
+        )
+        if joinable:
+            merged[-1] = TranscriptSegment(
+                id=previous.id,
+                start=previous.start,
+                end=segment.end,
+                text_fr=f"{previous.text_fr.rstrip()} {segment.text_fr.lstrip()}",
+            )
+        else:
+            merged.append(segment)
+
+    return [
+        TranscriptSegment(id=f"seg-{i + 1:03d}", start=s.start, end=s.end, text_fr=s.text_fr)
+        for i, s in enumerate(merged)
+    ]
 
 
 def load_glossary(path: Path) -> Glossary:
@@ -194,6 +242,14 @@ def main(config_path: Path = typer.Option(None, help="Chemin vers config.yaml.")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     config = load_config(config_path)
     segments = load_transcript(config.paths.resolve("data_dir") / "transcript_fr.json")
+    merged = merge_into_sentences(segments, config.llm.max_segment_seconds)
+    if len(merged) < len(segments):
+        logger.info(
+            "%d segments recollés en %d phrases (Whisper coupe sur les silences, "
+            "pas sur la syntaxe).",
+            len(segments), len(merged),
+        )
+    segments = merged
     glossary = load_glossary(PROJECT_ROOT / config.glossary_file)
     decisions = translate(segments, glossary, config)
     write_edl(decisions, config.paths.resolve("data_dir") / "edit_decision_list.yaml")

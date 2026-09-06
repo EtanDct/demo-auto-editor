@@ -90,13 +90,20 @@ def build_pieces(
         entry = entries_by_id[decision.id]
         if decision.source_start > cursor:
             pieces.append(Piece(kind="gap", start=cursor, end=decision.source_start))
-        extension = max(0.0, (entry.new_end - entry.new_start) - (decision.source_end - decision.source_start))
+
+        # `shot_duration` et non `source_duration` : ce dernier est la durée de
+        # la vidéo entière, et le masquer supprimait le dernier intervalle.
+        shot_duration = decision.source_end - decision.source_start
+        planned = entry.new_end - entry.new_start
+        # Un plan raccourci par le recalage coupe la fin du clip : le début
+        # porte l'action, la fin n'était que du blanc.
+        piece_end = decision.source_start + min(planned, shot_duration)
         pieces.append(
             Piece(
                 kind="segment",
                 start=decision.source_start,
-                end=decision.source_end,
-                extension=extension,
+                end=piece_end,
+                extension=max(0.0, planned - shot_duration),
                 decision=decision,
             )
         )
@@ -190,6 +197,7 @@ def build_audio_filter(
     narration_by_id: dict[str, NarrationManifestEntry],
     audio_input_start_index: int,
     total_duration: float,
+    config: PipelineConfig,
 ) -> tuple[str, list[Path], str]:
     ordered = [d for d in sorted(decisions, key=lambda d: d.source_start) if d.id in timeline_by_id]
     chains = []
@@ -212,8 +220,24 @@ def build_audio_filter(
         raise ValueError("Aucun segment audio à mixer : vérifie edit_decision_list.yaml / timeline.json.")
 
     mix_inputs = "".join(f"[{lbl}]" for lbl in labels)
-    chains.append(f"{mix_inputs}amix=inputs={len(labels)}:duration=longest:dropout_transition=0[amix_pre]")
-    chains.append(f"[amix_pre]apad=whole_dur={total_duration:.3f}[aout]")
+    # `normalize=0` est indispensable : par défaut `amix` divise par le nombre
+    # d'entrées ENCORE ACTIVES. Les narrations sont décalées par `adelay`, donc
+    # toutes actives au départ (silencieuses, mais actives) : chacune était
+    # atténuée de 1/34, soit -30 dB, et le niveau remontait au fil des fins de
+    # piste. Mesuré sur le rendu : -49.5 dB au début contre -20.4 dB à la fin,
+    # exactement la montée de volume entendue sur la dernière minute. Les
+    # narrations ne se recouvrent pas, les sommer telles quelles est correct.
+    chains.append(
+        f"{mix_inputs}amix=inputs={len(labels)}:duration=longest:"
+        f"dropout_transition=0:normalize=0[amix_pre]"
+    )
+    chains.append(f"[amix_pre]apad=whole_dur={total_duration:.3f}[apadded]")
+    # Loudness constante et crêtes bornées : le mixage brut suit le niveau de la
+    # voix de synthèse, et deux narrations qui se frôlent pourraient saturer.
+    chains.append(
+        f"[apadded]loudnorm=I={config.export.loudness_lufs}:"
+        f"TP={config.export.true_peak_db}:LRA=11[aout]"
+    )
 
     return ";".join(chains), audio_files, "[aout]"
 
@@ -259,6 +283,7 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
         narration_by_id,
         audio_input_start_index=1,
         total_duration=total_duration,
+        config=config,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
