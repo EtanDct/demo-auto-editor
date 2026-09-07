@@ -23,15 +23,28 @@ inspection:
 
 crop:
   # Retrait du bandeau de navigateur (onglets, URL, favoris), pour ne garder
-  # que la page présentée. Rien de la mise en page n'est supposé : la frontière
-  # est mesurée sur chaque vidéo, là où l'image cesse d'être figée.
+  # que la page présentée. Aucune hauteur n'est écrite en dur : la frontière est
+  # mesurée sur chaque vidéo.
   #   auto  : détection (défaut)
   #   off   : ne rien rogner
   #   <n>   : imposer n pixels, une fois la valeur mesurée sur une série
   top: auto
-  # Plafond de sécurité. Au-delà, on refuse de rogner : une bande figée aussi
-  # haute est plus probablement un en-tête applicatif (la barre supérieure de
-  # SAP Fiori fait partie du produit) qu'un bandeau de navigateur.
+
+  # Méthode principale : la couleur de la barre supérieure de l'application.
+  # On descend depuis le haut ; la première bande pleine largeur de cette teinte
+  # est la frontière. Elle est conservée — la barre Fiori fait partie du produit
+  # montré, c'est le navigateur au-dessus qu'on retire.
+  # Ajoute ici la teinte de ton thème si elle diffère (une ou plusieurs) :
+  #   Fiori Belize (défaut) #354a5f | Quartz Dark #1c2228 | Horizon Dark #1d232a
+  anchor_colors: ["#354a5f"]
+  anchor_tolerance: 24    # écart admis par canal (la compression délave la teinte)
+  anchor_coverage: 0.6    # part de la largeur exigée pour parler d'une bande
+  anchor_min_rows: 6      # lignes de suite exigées : un bouton isolé ne compte pas
+  anchor_min_frames: 0.5  # part des images où la barre doit se retrouver
+
+  # Plafond de sécurité, commun aux deux méthodes. Au-delà, on refuse de rogner :
+  # une frontière aussi basse est plus probablement un en-tête applicatif qu'un
+  # bandeau de navigateur.
   max_fraction: 0.25
   run_rows: 20          # lignes consécutives de contenu exigées pour trancher
   sample_fps: 1.0       # échantillonnage pour la mesure

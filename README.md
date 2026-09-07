@@ -20,10 +20,20 @@ vidéo source
 ```
 
 L'étape optionnelle `crop` retire au préalable le bandeau du navigateur —
-onglets, URL, favoris — pour ne garder que la page présentée. Aucune mise en
-page n'est supposée : la frontière est mesurée sur chaque vidéo, là où l'image
-cesse d'être figée. Elle produit une vidéo de travail sur laquelle tout l'aval
-se recale, et une image de contrôle dans `logs/crop_preview.jpg`.
+onglets, URL, favoris — pour ne garder que la page présentée. Aucune hauteur
+n'est écrite en dur : la frontière est mesurée sur chaque vidéo, d'abord à la
+couleur de la barre supérieure de l'application (`#354a5f` sur le thème Fiori
+Belize, réglable dans `crop.anchor_colors`), sinon en repérant à partir d'où
+l'image cesse d'être figée. On cherche où commence l'application plutôt qu'où
+finit le navigateur : le bandeau du haut n'a aucune signature stable — thème
+clair ou sombre, avec ou sans favoris, un navigateur ou un autre — alors que la
+barre applicative a une teinte connue et pleine largeur. Elle est conservée,
+elle fait partie du produit montré.
+
+L'étape produit une vidéo de travail sur laquelle tout l'aval se recale, et une
+image de contrôle dans `logs/crop_preview.jpg`. Si la teinte est absente et que
+la seconde méthode ne tranche pas franchement, elle refuse de rogner plutôt que
+d'entamer l'application.
 
 Deux briques préparent le montage automatique (synchroniser une incrustation
 avec le moment où le narrateur désigne un élément d'interface) :
