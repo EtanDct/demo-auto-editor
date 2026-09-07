@@ -36,6 +36,12 @@ class InspectionConfig(BaseModel):
 class CropConfig(BaseModel):
     top: str | int = "auto"
     max_fraction: float = 0.25
+    # Ancrage par la couleur de la barre applicative (méthode principale).
+    anchor_colors: list[str] = ["#354a5f"]
+    anchor_tolerance: int = 24
+    anchor_coverage: float = 0.6
+    anchor_min_rows: int = 6
+    anchor_min_frames: float = 0.5
     run_rows: int = 20
     sample_fps: float = 1.0
     sample_frames: int = 120
