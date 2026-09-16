@@ -17,8 +17,6 @@ from cursor_overlays import (
     build_spans,
     cursor_filter_for,
     find_hovers,
-    follow_filter,
-    group_runs,
     held_positions,
 )
 from schemas import BoundingBox, CursorSample, CursorTrack, ScreenElement
@@ -67,20 +65,6 @@ def test_une_position_tenue_finit_par_expirer():
     spans = build_spans(track((0.0, 0.1, 0.1), (30.0, 0.8, 0.8)).samples, FPS, max_hold=6.0)
 
     assert spans[0].end == 6.0
-
-
-def test_les_intervalles_jointifs_forment_un_seul_groupe():
-    spans = build_spans(
-        track((0.0, 0.1, 0.1), (0.125, 0.2, 0.2), (0.25, 0.3, 0.3)).samples, FPS, max_hold=6.0
-    )
-
-    assert len(group_runs(spans)) == 1
-
-
-def test_un_trou_expire_coupe_le_groupe():
-    spans = build_spans(track((0.0, 0.1, 0.1), (30.0, 0.8, 0.8)).samples, FPS, max_hold=6.0)
-
-    assert len(group_runs(spans)) == 2
 
 
 def test_la_grille_tient_la_position_pendant_un_arret():
@@ -132,24 +116,6 @@ def test_un_bloc_de_texte_courant_n_est_pas_encadre(config):
 
 
 # --- fragments FFmpeg -----------------------------------------------------
-
-def test_le_marqueur_suit_le_pointeur_dans_le_temps(config):
-    run = [Span(0.0, 0.5, 0.1, 0.1, 0.6, 0.6)]
-
-    fragment = follow_filter(run, config)
-
-    assert fragment.startswith("drawbox=")
-    assert "t-0.000" in fragment  # position affine en fonction du temps
-
-
-def test_un_pointeur_immobile_donne_une_position_constante(config):
-    run = [Span(0.0, 1.0, 0.4, 0.5, 0.4, 0.5)]
-
-    fragment = follow_filter(run, config)
-
-    assert "(iw*0.40000)" in fragment
-    assert "t-" not in fragment.split("enable")[0]
-
 
 def test_les_temps_sont_ramenes_a_l_origine_du_morceau(config):
     """`render_video` applique `setpts=PTS-STARTPTS` : un temps absolu décalerait

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from subtitles import _format_timestamp, build_srt, split_into_cues, wrap_text
+from subtitles import _format_timestamp, build_srt, split_into_cues, wrap_lines
 from schemas import TimelineEntry
 
 from test_build_timeline import make_decision
@@ -20,11 +20,11 @@ def make_entry(seg_id: str, new_start: float, new_end: float) -> TimelineEntry:
 
 
 def test_texte_court_tient_sur_une_ligne():
-    assert wrap_text("Click the button.", 42, 2) == ["Click the button."]
+    assert wrap_lines("Click the button.", 42) == ["Click the button."]
 
 
 def test_coupure_sur_les_mots_jamais_au_milieu_d_un_mot():
-    lines = wrap_text("Select the company code in the corresponding field.", 30, 2)
+    lines = wrap_lines("Select the company code in the corresponding field.", 30)
 
     assert len(lines) == 2
     assert all(len(line) <= 30 for line in lines)
@@ -49,13 +49,14 @@ def test_chaque_sous_titre_respecte_les_limites_de_lignes():
 
 def test_mot_plus_long_que_la_ligne_est_conserve_tel_quel():
     """Tronquer au milieu d'un identifiant SAP le rendrait illisible."""
-    lines = wrap_text("ManageJournalEntriesApp", 10, 2)
+    lines = wrap_lines("ManageJournalEntriesApp", 10)
 
     assert lines == ["ManageJournalEntriesApp"]
 
 
 def test_texte_vide_ne_produit_aucune_ligne():
-    assert wrap_text("", 42, 2) == []
+    assert wrap_lines("", 42) == []
+    assert split_into_cues("", 42, 2) == []
 
 
 def test_format_timestamp_srt():

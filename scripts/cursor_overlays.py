@@ -1,12 +1,8 @@
 """Incrustations pilotées par le pointeur, sans aucune correspondance de texte.
 
-Deux effets, tous deux dérivés de la seule trajectoire de la souris
-(`data/cursor_track.json`) et de l'index du texte à l'écran :
-
-- **le marqueur de suivi** : un cadre qui accompagne le pointeur, pour que
-  l'œil sache où regarder ;
-- **le survol** : quand le pointeur se pose sur un libellé et y reste, ce
-  libellé est encadré.
+Un effet, le **survol** : quand le pointeur se pose sur un libellé et y reste,
+ce libellé est encadré. Il est dérivé de la seule trajectoire de la souris
+(`data/cursor_track.json`) et de l'index du texte à l'écran.
 
 C'est la voie robuste du montage automatique. L'appariement entre ce que dit le
 narrateur et ce que montre l'écran (`match_overlays`) échoue dès que la
@@ -15,12 +11,20 @@ décrit au lieu de nommer. Ici rien de tout ça n'intervient : ce qui est montr�
 est déduit de ce que fait la souris, ce qui reste vrai quelle que soit la
 langue et quoi que dise le narrateur.
 
-Mécanique FFmpeg : `drawbox` évalue bien `t` dans `x` et `y` (à l'inverse de
-son épaisseur), donc un seul `drawbox` suffit à faire suivre le pointeur, avec
-une expression affine par morceaux. Les positions ne sont interpolées qu'entre
-deux relevés consécutifs ; sur un trou plus large, la dernière position est
-tenue plutôt que glissée vers la suivante, ce qui inventerait un déplacement
-qui n'a pas eu lieu.
+Les positions ne sont interpolées qu'entre deux relevés consécutifs ; sur un
+trou plus large, la dernière position est tenue plutôt que glissée vers la
+suivante, ce qui inventerait un déplacement qui n'a pas eu lieu.
+
+**Retiré : le marqueur qui suivait le pointeur.** Il produisait plus de faux
+positifs qu'il n'aidait, pour deux raisons, la seconde rédhibitoire :
+- il était décalé d'une trentaine de pixels, la détection situant le centre de
+  la tache en mouvement quand le point actif d'une flèche est sa pointe ;
+- il restait affiché sur la dernière position tenue, donc figé là où la souris
+  n'était plus. Tenir la position vaut pour déduire un survol, corroboré par
+  l'élément qui se trouve dessous ; ça ne vaut pas pour un marqueur qui affirme
+  où est la souris.
+Le rétablir supposerait de ne le dessiner que sur les intervalles réellement
+détectés, pas sur les positions tenues.
 """
 
 from __future__ import annotations
@@ -118,47 +122,6 @@ def held_positions(spans: list[Span], step: float) -> list[tuple[float, float, f
     return grid
 
 
-def group_runs(spans: list[Span]) -> list[list[Span]]:
-    """Regroupe les intervalles jointifs : un `drawbox` par groupe."""
-    runs: list[list[Span]] = []
-    for span in spans:
-        if runs and abs(runs[-1][-1].end - span.start) < 1e-6:
-            runs[-1].append(span)
-        else:
-            runs.append([span])
-    return runs
-
-
-def _axis_expression(run: list[Span], axis: str, dimension: str) -> str:
-    """Expression affine par morceaux de la position du pointeur sur un axe."""
-    def value(span: Span) -> str:
-        start_value = getattr(span, f"from_{axis}")
-        end_value = getattr(span, f"to_{axis}")
-        if span.is_still:
-            return f"({dimension}*{start_value:.5f})"
-        slope = (end_value - start_value) / (span.end - span.start)
-        return f"({dimension}*({start_value:.5f}+{slope:.5f}*(t-{span.start:.3f})))"
-
-    expression = value(run[-1])
-    for span in reversed(run[:-1]):
-        expression = f"if(lt(t,{span.end:.3f}),{value(span)},{expression})"
-    return expression
-
-
-def follow_filter(run: list[Span], config: PipelineConfig) -> str:
-    """Un `drawbox` centré sur le pointeur, actif sur toute la durée du groupe."""
-    settings = config.cursor_overlay
-    half = settings.marker_size / 2
-    x = f"({_axis_expression(run, 'x', 'iw')})-(iw*{half})"
-    y = f"({_axis_expression(run, 'y', 'ih')})-(ih*{half})"
-    return (
-        f"drawbox=x='{x}':y='{y}':w=(iw*{settings.marker_size}):h=(ih*{settings.marker_size}):"
-        f"color={settings.marker_color}@{settings.marker_opacity}:"
-        f"t={settings.marker_thickness}"
-        f"{enable_clause(run[0].start, run[-1].end)}"
-    )
-
-
 def find_hovers(
     track: CursorTrack, elements: list[ScreenElement], config: PipelineConfig
 ) -> list[Hover]:
@@ -249,25 +212,6 @@ def cursor_filter_for(
         return None
 
     fragments: list[str] = []
-
-    if settings.follow_enabled:
-        inside = [
-            s for s in track.samples if piece_start - 1.0 <= s.timestamp <= piece_end + 1.0
-        ]
-        spans = build_spans(inside, track.sample_fps, settings.max_hold_seconds)
-        for run in group_runs(spans):
-            clipped = [
-                Span(
-                    max(_shift(s.start, piece_start), 0.0),
-                    min(_shift(s.end, piece_start), piece_end - piece_start),
-                    s.from_x, s.from_y, s.to_x, s.to_y,
-                )
-                for s in run
-                if s.end > piece_start and s.start < piece_end
-            ]
-            clipped = [s for s in clipped if s.end > s.start]
-            if clipped:
-                fragments.append(follow_filter(clipped, config))
 
     if settings.hover_enabled:
         for hover in find_hovers(track, elements, config):

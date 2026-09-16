@@ -190,10 +190,6 @@ class BoundingBox(BaseModel):
     def area(self) -> float:
         return self.width * self.height
 
-    @property
-    def center(self) -> tuple[float, float]:
-        return self.x + self.width / 2, self.y + self.height / 2
-
     def iou(self, other: "BoundingBox") -> float:
         """Intersection sur union : sert à décider si deux détections OCR de
         frames différentes désignent le même élément d'interface."""

@@ -74,12 +74,6 @@ def split_into_cues(text: str, max_chars_per_line: int, max_lines: int) -> list[
     return [lines[i : i + max_lines] for i in range(0, len(lines), max_lines)] or []
 
 
-def wrap_text(text: str, max_chars_per_line: int, max_lines: int) -> list[str]:
-    """Premier sous-titre seulement. Conservé pour les appels qui n'en veulent qu'un."""
-    cues = split_into_cues(text, max_chars_per_line, max_lines)
-    return cues[0] if cues else []
-
-
 def _format_timestamp(seconds: float) -> str:
     total_ms = round(seconds * 1000)
     hours, rem_ms = divmod(total_ms, 3_600_000)

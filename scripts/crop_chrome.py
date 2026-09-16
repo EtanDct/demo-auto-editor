@@ -103,9 +103,6 @@ def detect_chrome_height(frames, max_fraction: float, run_rows: int) -> tuple[in
     )
 
 
-FIORI_SHELL_NAVY = "#354a5f"
-
-
 def parse_color(value: str) -> tuple[int, int, int]:
     """Couleur RVB depuis une notation hexadécimale (`#354a5f` ou `354a5f`)."""
     text = str(value).strip().lstrip("#")
