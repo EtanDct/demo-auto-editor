@@ -118,7 +118,7 @@ def test_le_mode_auto_mesure(config):
 # apparaissent comme une seule bande, et le plafond la fait renoncer. La teinte
 # de la barre Fiori, elle, dit exactement où commence l'application.
 
-NAVY = (0x35, 0x4A, 0x5F)  # #354a5f, barre supérieure du thème Fiori Belize
+NAVY = (0x35, 0x4A, 0x5F)  # #354a5f, sapShellColor des thèmes Fiori Quartz
 
 
 def app_frames(
@@ -266,10 +266,10 @@ def test_l_ancrage_passe_avant_la_variation(config):
 
 
 def test_plusieurs_teintes_peuvent_etre_configurees(config):
-    """Un autre thème Fiori : la liste s'allonge, le code ne change pas."""
+    """Horizon Dark (#1d232a) : la liste s'allonge, le code ne change pas."""
     patched = config.model_copy(deep=True)
-    patched.crop.anchor_colors = ["#354a5f", "#1c2228"]
-    images = app_frames(chrome_height=60, navy=(0x1C, 0x22, 0x28))
+    patched.crop.anchor_colors = ["#354a5f", "#1d232a"]
+    images = app_frames(chrome_height=60, navy=(0x1D, 0x23, 0x2A))
 
     assert detect_anchor_height(images, patched.crop)[0] == 60
 
@@ -278,10 +278,10 @@ def test_la_teinte_la_plus_haute_l_emporte(config):
     """Deux couleurs configurées présentes toutes les deux : c'est la première
     rencontrée en descendant qui marque le début de l'application."""
     patched = config.model_copy(deep=True)
-    patched.crop.anchor_colors = ["#354a5f", "#1c2228"]
+    patched.crop.anchor_colors = ["#354a5f", "#1d232a"]
     images = app_frames(chrome_height=80)
     for frame in images:
-        frame[300:344] = (0x1C, 0x22, 0x28)
+        frame[300:344] = (0x1D, 0x23, 0x2A)
 
     assert detect_anchor_height(images, patched.crop)[0] == 80
 
@@ -305,3 +305,24 @@ def test_une_image_en_niveaux_de_gris_ne_porte_aucune_teinte():
     grey = np.full((HEIGHT, WIDTH), 128, dtype=np.uint8)
 
     assert first_band_row(grey, [NAVY], 24, 0.6, 6) is None
+
+
+# --- teintes livrées par défaut ---------------------------------------------------
+
+def test_seule_la_teinte_quartz_est_livree_par_defaut(config):
+    assert config.crop.anchor_colors == ["#354a5f"]
+
+
+def test_horizon_dark_se_confond_avec_un_navigateur_sombre(config):
+    """Pourquoi Horizon Dark n'est pas dans les teintes par défaut : ses onglets
+    ont la teinte de Chrome en thème sombre. Ajoutée, elle ferait prendre le
+    haut du navigateur pour la barre de l'application — et, la bande la plus
+    haute l'emportant, même un utilisateur de Quartz ne serait plus rogné."""
+    patched = config.model_copy(deep=True)
+    patched.crop.anchor_colors = ["#354a5f", "#1d232a"]
+    images = app_frames(chrome_height=80)
+    for frame in images:
+        frame[:40] = (0x20, 0x21, 0x24)   # onglets de Chrome sombre
+
+    assert detect_anchor_height(images, config.crop)[0] == 80      # défaut : juste
+    assert detect_anchor_height(images, patched.crop)[0] == 0      # avec Horizon Dark : rien

@@ -10,7 +10,7 @@ chaque vidéo. Deux méthodes, dans cet ordre.
    plutôt qu'où finit le navigateur. Le bandeau du haut n'a aucune signature
    stable — thème clair ou sombre, avec ou sans favoris, un navigateur ou un
    autre — alors que la barre supérieure de Fiori a une teinte connue et pleine
-   largeur (#354a5f sur le thème Belize). En descendant depuis le haut, la
+   largeur (#354a5f, `sapShellColor` des thèmes Quartz Light et Dark). En descendant depuis le haut, la
    première ligne de cette teinte est la frontière ; on la garde, elle fait
    partie du produit montré. C'est réglable (`crop.anchor_colors`) : d'autres
    thèmes, d'autres produits, d'autres teintes.

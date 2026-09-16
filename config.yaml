@@ -33,8 +33,18 @@ crop:
   # On descend depuis le haut ; la première bande pleine largeur de cette teinte
   # est la frontière. Elle est conservée — la barre Fiori fait partie du produit
   # montré, c'est le navigateur au-dessus qu'on retire.
-  # Ajoute ici la teinte de ton thème si elle diffère (une ou plusieurs) :
-  #   Fiori Belize (défaut) #354a5f | Quartz Dark #1c2228 | Horizon Dark #1d232a
+  # Teinte `sapShellColor` des thèmes Fiori, relevée dans le dépôt officiel
+  # SAP/theming-base-content :
+  #   Quartz Light (sap_fiori_3)       #354a5f  <- défaut
+  #   Quartz Dark  (sap_fiori_3_dark)  #354a5f  (même teinte)
+  #   Horizon Dark (sap_horizon_dark)  #1d232a  à n'ajouter qu'avec un navigateur
+  #                                             en thème clair : les onglets de
+  #                                             Chrome sombre ont presque la même
+  #                                             teinte, et la détection prendrait
+  #                                             le navigateur pour la barre
+  #   Horizon      (sap_horizon)       #fff     inutilisable : blanc comme la page
+  #   Belize       (sap_belize)        transparent, inutilisable
+  # Sans teinte reconnue, la détection retombe sur la variation temporelle.
   anchor_colors: ["#354a5f"]
   anchor_tolerance: 24    # écart admis par canal (la compression délave la teinte)
   anchor_coverage: 0.6    # part de la largeur exigée pour parler d'une bande

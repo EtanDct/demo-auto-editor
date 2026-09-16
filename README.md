@@ -22,8 +22,8 @@ vidéo source
 L'étape `crop` retire au préalable le bandeau du navigateur —
 onglets, URL, favoris — pour ne garder que la page présentée. Aucune hauteur
 n'est écrite en dur : la frontière est mesurée sur chaque vidéo, d'abord à la
-couleur de la barre supérieure de l'application (`#354a5f` sur le thème Fiori
-Belize, réglable dans `crop.anchor_colors`), sinon en repérant à partir d'où
+couleur de la barre supérieure de l'application (`#354a5f`, celle des thèmes Fiori
+Quartz, réglable dans `crop.anchor_colors`), sinon en repérant à partir d'où
 l'image cesse d'être figée. On cherche où commence l'application plutôt qu'où
 finit le navigateur : le bandeau du haut n'a aucune signature stable — thème
 clair ou sombre, avec ou sans favoris, un navigateur ou un autre — alors que la
@@ -34,6 +34,12 @@ L'étape produit une vidéo de travail sur laquelle tout l'aval se recale, et un
 image de contrôle dans `logs/crop_preview.jpg`. Si la teinte est absente et que
 la seconde méthode ne tranche pas franchement, elle refuse de rogner plutôt que
 d'entamer l'application.
+
+Tous les thèmes Fiori ne s'y prêtent pas : Horizon a une barre blanche comme la
+page, Belize une barre transparente, et Horizon Dark une teinte presque
+identique aux onglets d'un navigateur en thème sombre — l'ajouter sans
+précaution ferait prendre le navigateur pour l'application. Les teintes et
+leurs limites sont détaillées dans `config.yaml`.
 
 Deux briques préparent le montage automatique (synchroniser une incrustation
 avec le moment où le narrateur désigne un élément d'interface) :
