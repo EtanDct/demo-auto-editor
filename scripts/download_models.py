@@ -154,7 +154,46 @@ def download_piper_binary(models_dir: Path) -> list[DownloadedModel]:
     return [_record("piper-binary", "rhasspy/piper", exe_path)]
 
 
+KOKORO_REPO = "thewh1teagle/kokoro-onnx"
+
+
+def kokoro_paths(config, models_dir: Path) -> tuple[Path, Path]:
+    """Modèle et banque de voix Kokoro, tels que build_narration les attend."""
+    target = models_dir / "kokoro"
+    return target / config.tts.kokoro_model, target / config.tts.kokoro_voices
+
+
+def download_kokoro(config, models_dir: Path) -> list[DownloadedModel]:
+    """Modèle Kokoro-82M et banque de voix, depuis les publications de kokoro-onnx.
+
+    Deux fichiers, pas un dépôt Hugging Face : le paquet `kokoro-onnx` lit la
+    banque de voix dans son propre format (`voices-v1.0.bin`), que seules ses
+    publications fournissent.
+    """
+    records = []
+    for path in kokoro_paths(config, models_dir):
+        if path.exists():
+            logger.info("Fichier Kokoro déjà présent : %s", path)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            url = (
+                f"https://github.com/{KOKORO_REPO}/releases/download/"
+                f"{config.tts.kokoro_release}/{path.name}"
+            )
+            logger.info("Téléchargement de %s", url)
+            partial = path.with_suffix(path.suffix + ".part")
+            # Écrit à côté puis renommé : un téléchargement interrompu ne laisse
+            # pas un fichier tronqué que l'étape suivante prendrait pour bon.
+            urllib.request.urlretrieve(url, partial)  # noqa: S310 (URL construite ici)
+            partial.replace(path)
+        records.append(_record(f"kokoro-{path.name}", KOKORO_REPO, path))
+    return records
+
+
 def download_tts(config, models_dir: Path) -> list[DownloadedModel]:
+    if config.tts.engine == "kokoro":
+        return download_kokoro(config, models_dir)
+
     records = download_piper_binary(models_dir)
 
     lang_family, lang_code, speaker, quality = parse_piper_voice(config.tts.voice)

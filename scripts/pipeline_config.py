@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel
@@ -78,10 +79,14 @@ class LlmConfig(BaseModel):
 
 
 class TtsConfig(BaseModel):
-    engine: str = "piper"
-    piper_repo_id: str
+    engine: Literal["piper", "kokoro"] = "kokoro"
     voice: str
-    sample_rate: int = 22050
+    speed: float = 1.0
+    lang: str = "en-us"
+    kokoro_release: str = "model-files-v1.0"
+    kokoro_model: str = "kokoro-v1.0.onnx"
+    kokoro_voices: str = "voices-v1.0.bin"
+    piper_repo_id: str = "rhasspy/piper-voices"
 
 
 class RetimingConfig(BaseModel):
