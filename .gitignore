@@ -10,8 +10,6 @@ audio/narration/*
 !audio/narration/.gitkeep
 frames/*
 !frames/.gitkeep
-overlays/*
-!overlays/.gitkeep
 logs/*
 !logs/.gitkeep
 *.mp4

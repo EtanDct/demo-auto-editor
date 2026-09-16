@@ -15,7 +15,6 @@ class PathsConfig(BaseModel):
     data_dir: str
     audio_dir: str
     frames_dir: str
-    overlays_dir: str
     models_dir: str
     work_dir: str
     output_dir: str
@@ -88,8 +87,6 @@ class TtsConfig(BaseModel):
 
 class RetimingConfig(BaseModel):
     max_speed_factor: float = 1.08
-    min_speed_factor: float = 0.95
-    min_pause_ms: int = 80
     max_slack_seconds: float = 0.8
     min_shot_seconds: float = 1.2
 
@@ -97,7 +94,6 @@ class RetimingConfig(BaseModel):
 class SubtitlesConfig(BaseModel):
     max_chars_per_line: int = 42
     max_lines: int = 2
-    font_path: str | None = None
 
 
 class CursorConfig(BaseModel):
@@ -113,11 +109,6 @@ class CursorOverlayConfig(BaseModel):
     enabled: bool = True
     max_hold_seconds: float = 6.0
     hover_step_seconds: float = 0.125
-    follow_enabled: bool = False
-    marker_size: float = 0.055
-    marker_color: str = "cyan"
-    marker_opacity: float = 0.7
-    marker_thickness: int = 2
     hover_enabled: bool = True
     hover_max_distance: float = 0.012
     hover_max_box_area: float = 0.05
@@ -202,7 +193,6 @@ class OutroConfig(BaseModel):
 
 
 class ExportConfig(BaseModel):
-    container: str = "mp4"
     video_codec: str = "libx264"
     audio_codec: str = "aac"
     audio_sample_rate: int = 48000

@@ -285,7 +285,6 @@ project/
     source_audio.wav
     narration/
   frames/
-  overlays/
   scripts/
     inspect_source.py
     transcribe.py

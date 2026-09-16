@@ -74,9 +74,9 @@ fonctionnent quelle que soit la langue de l'interface et quoi que dise le
 narrateur — c'est la voie qui produit effectivement des incrustations
 aujourd'hui.
 
-Un marqueur suivant le pointeur existe aussi (`follow_enabled`) mais est
-désactivé : il reste figé sur la dernière position tenue pendant les creux de
-détection, donc là où la souris n'est plus. Tenir la position vaut pour déduire
+Un marqueur qui suivait le pointeur a été retiré : il restait figé sur la
+dernière position tenue pendant les creux de détection, donc là où la souris
+n'est plus. Tenir la position vaut pour déduire
 un survol, corroboré par l'élément qui se trouve dessous ; pas pour un marqueur
 qui prétend dire où est la souris.
 
@@ -168,7 +168,6 @@ data/        métadonnées, transcription, conducteur de montage, sous-titres,
              index du texte à l'écran
 audio/       audio source et narration générée (non versionné)
 frames/      vignettes extraites (non versionné)
-overlays/    assets d'incrustation (zoom, highlight, callout...)
 work/        vidéo recadrée, cartons d'intro et de fin (non versionné)
 scripts/     étapes du pipeline
 output/      rendus finaux (non versionné)

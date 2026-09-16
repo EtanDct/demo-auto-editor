@@ -71,16 +71,6 @@ class Layout:
         return (self.width, self.height) != (self.content_width, self.content_height)
 
     @property
-    def is_identity(self) -> bool:
-        return (
-            not self.scaled
-            and self.width == self.content_width
-            and self.height == self.content_height
-            and self.content_x == 0
-            and self.content_y == 0
-        )
-
-    @property
     def bottom_top(self) -> int:
         """Ordonnée du haut de la bande basse."""
         return self.content_y + self.content_height

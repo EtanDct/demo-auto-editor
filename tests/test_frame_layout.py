@@ -77,7 +77,10 @@ def test_sans_place_pour_une_bande_l_image_est_centree(config):
 
 
 def test_une_capture_a_la_taille_du_canevas_est_livree_telle_quelle(config):
-    assert layout_of(config, 1920, 1080).is_identity
+    layout = layout_of(config, 1920, 1080)
+
+    assert not layout.scaled and not layout.needs_pad
+    assert (layout.top_height, layout.bottom_height) == (0, 0)
 
 
 def test_une_capture_plus_grande_est_reduite_sans_deformation(config):
@@ -130,7 +133,7 @@ def test_la_mise_en_page_desactivee_livre_la_taille_rognee(config):
 
     layout = layout_of(patched, 1920, 868)
 
-    assert layout.is_identity
+    assert not layout.scaled and not layout.needs_pad
     assert (layout.width, layout.height) == (1920, 868)
 
 
