@@ -23,6 +23,9 @@ passe là où la consigne générale n'est pas suivie.
 from __future__ import annotations
 
 import re
+from pathlib import Path
+
+import yaml
 
 from schemas import Glossary, GlossaryTerm
 from ui_reference import normalize_text
@@ -33,6 +36,29 @@ from ui_reference import normalize_text
 MIN_LENGTH_RATIO = 0.4
 # Sous ce nombre de mots, le texte source est trop court pour juger un rapport.
 MIN_WORDS_FOR_RATIO = 12
+
+
+def load_glossary(path: Path) -> Glossary:
+    if not path.exists():
+        return Glossary()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return Glossary.model_validate(raw)
+
+
+def translate_terms(text: str, glossary: Glossary) -> str | None:
+    """Le texte, termes du glossaire remplacés par leur traduction, ou None.
+
+    Sert à rapprocher ce que dit un narrateur français d'une interface en
+    anglais : « Revenus » devient « revenue », qu'on retrouve sur la vignette
+    « Revenue ». Les termes les plus longs passent d'abord, pour que « prix
+    moyen » ne soit pas mangé par un terme plus court. Rend None si rien n'a
+    changé : il n'y a alors pas de seconde forme à essayer.
+    """
+    normalized = normalize_text(text)
+    translated = normalized
+    for term in sorted(glossary.terms, key=lambda t: -len(t.fr)):
+        translated = _fr_pattern(term.fr).sub(term.en.lower(), translated)
+    return translated if translated != normalized else None
 
 
 def _fr_pattern(fr: str) -> re.Pattern:

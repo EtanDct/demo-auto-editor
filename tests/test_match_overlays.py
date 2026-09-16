@@ -377,3 +377,69 @@ def test_la_distance_se_mesure_au_bord_le_plus_proche():
 
     assert distance_to_box(box, (0.35, 0.32)) == pytest.approx(0.05)
     assert distance_to_box(box, (0.25, 0.4)) == pytest.approx(0.05)
+
+
+# --- même contrôle scindé par l'OCR -----------------------------------------------
+
+def test_un_controle_scinde_dans_le_temps_n_est_pas_son_propre_rival(config):
+    """Régression : le bouton « Clear » était deux éléments consécutifs au même
+    endroit (`scr-0957` jusqu'à 99,5 s, `scr-1082` dès 101 s) ; le cadre était
+    refusé pour « ambiguïté »."""
+    target = decision("clear", 96.0, 103.0)
+    elements = [
+        element("Clear", 78.5, 99.5, x=0.944, y=0.477, width=0.026, height=0.03),
+        element("Clear ", 101.0, 107.0, x=0.935, y=0.478, width=0.035, height=0.03),
+    ]
+
+    verdict = judge(target, gather_candidates(target, elements, config), config)
+
+    assert verdict.accepted, verdict.reason
+
+
+def test_la_presence_des_morceaux_se_cumule(config):
+    target = decision("Clear", 10.0, 20.0)
+    elements = [
+        element("Clear", 10.0, 14.0, x=0.9, y=0.4),
+        element("Clear ", 15.0, 20.0, x=0.905, y=0.4),
+    ]
+
+    (merged,) = gather_candidates(target, elements, config)
+
+    assert merged.visible_fraction == pytest.approx(0.9)
+    assert (merged.element.first_seen, merged.element.last_seen) == (10.0, 20.0)
+
+
+def test_des_libelles_identiques_a_des_places_differentes_restent_rivaux(config):
+    """Six lignes « Nordic Tech » dans un tableau : laquelle ? Le refus est juste."""
+    target = decision("Nordic Tech", 10.0, 20.0)
+    elements = [element("Nordic Tech ", 0.0, 100.0, x=0.5, y=0.6 + 0.06 * i) for i in range(3)]
+
+    verdict = judge(target, gather_candidates(target, elements, config), config)
+
+    assert not verdict.accepted
+    assert "ambigu" in verdict.reason
+
+
+# --- écart de langue entre narration et interface ---------------------------------
+
+def test_le_glossaire_relie_le_mot_dit_au_libelle_affiche(config):
+    """Le narrateur dit « Revenus », la vignette affiche « Revenue »."""
+    from schemas import Glossary, GlossaryTerm
+
+    glossary = Glossary(terms=[GlossaryTerm(fr="revenu", en="revenue")])
+    target = decision("Revenus", 10.0, 20.0)
+    elements = [element("Revenue", 0.0, 100.0)]
+
+    assert gather_candidates(target, elements, config) == []
+    verdict = judge(target, gather_candidates(target, elements, config, glossary), config)
+
+    assert verdict.accepted and verdict.element_text == "Revenue"
+
+
+def test_sans_terme_du_glossaire_rien_n_est_invente(config):
+    from schemas import Glossary, GlossaryTerm
+
+    glossary = Glossary(terms=[GlossaryTerm(fr="revenu", en="revenue")])
+    target = decision("Clients", 10.0, 20.0)
+
+    assert gather_candidates(target, [element("Revenue", 0.0, 100.0)], config, glossary) == []

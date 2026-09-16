@@ -257,3 +257,29 @@ def test_une_majuscule_de_debut_de_phrase_n_est_pas_un_nom():
     fr = "Donc on filtre. Voilà, on a tout. Ensuite on trie."
 
     assert missing_names(fr, "We filter, then sort.") == []
+
+
+# --- traduction des termes d'un libellé ------------------------------------------
+
+def test_un_libelle_francais_est_traduit_terme_a_terme():
+    from translation_checks import translate_terms
+
+    assert translate_terms("Catégorie", GLOSSARY) == "category"
+    assert translate_terms("les vignettes", GLOSSARY) == "les tile"
+
+
+def test_le_terme_le_plus_long_passe_d_abord():
+    from translation_checks import translate_terms
+
+    glossary = Glossary(terms=[
+        GlossaryTerm(fr="commande", en="order"),
+        GlossaryTerm(fr="report des ventes", en="sales report"),
+    ])
+
+    assert translate_terms("le report des ventes", glossary) == "le sales report"
+
+
+def test_sans_terme_connu_pas_de_seconde_forme():
+    from translation_checks import translate_terms
+
+    assert translate_terms("Nordic Tech", GLOSSARY) is None

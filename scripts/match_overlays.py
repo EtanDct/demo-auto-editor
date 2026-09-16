@@ -43,17 +43,19 @@ import yaml
 
 from build_narration import load_edl
 from detect_cursor import load_track, position_at
-from pipeline_config import PipelineConfig, load_config
+from pipeline_config import PROJECT_ROOT, PipelineConfig, load_config
 from schemas import (
     BoundingBox,
     CursorTrack,
     EditDecision,
+    Glossary,
     OverlayCandidate,
     OverlayMatchReport,
     ScreenElement,
     ScreenTextIndex,
     VisualAction,
 )
+from translation_checks import load_glossary, translate_terms
 from ui_reference import identifying_tokens, match_key, normalize_text
 
 logger = logging.getLogger(__name__)
@@ -108,11 +110,24 @@ def score_candidate(label: str, screen_text: str) -> float:
 
 
 def gather_candidates(
-    decision: EditDecision, elements: list[ScreenElement], config: PipelineConfig
+    decision: EditDecision,
+    elements: list[ScreenElement],
+    config: PipelineConfig,
+    glossary: Glossary | None = None,
 ) -> list[ScoredElement]:
-    """Éléments visibles pendant le segment, notés contre le libellé annoncé."""
+    """Éléments visibles pendant le segment, notés contre le libellé annoncé.
+
+    Le libellé est aussi essayé sous sa forme traduite par le glossaire : sur la
+    démo Sales Report, le narrateur dit « revenus » et l'interface affiche
+    « Revenue ». Le glossaire est validé à la main, donc cette seconde forme
+    n'invente rien — elle ne fait que ce qu'un spectateur bilingue ferait.
+    """
     settings = config.overlay_matching
     label = decision.ui_reference.label
+    labels = [label]
+    translated = translate_terms(label, glossary) if glossary else None
+    if translated:
+        labels.append(translated)
     # Le narrateur nomme souvent l'élément juste avant ou après l'avoir montré :
     # la fenêtre déborde du segment des deux côtés.
     start = decision.source_start - settings.time_margin_seconds
@@ -122,7 +137,7 @@ def gather_candidates(
     for element in elements:
         if element.last_seen <= start or element.first_seen >= end:
             continue
-        score = score_candidate(label, element.text)
+        score = max(score_candidate(candidate, element.text) for candidate in labels)
         if score <= 0:
             continue
         scored.append(
@@ -133,7 +148,64 @@ def gather_candidates(
             )
         )
 
-    return sorted(scored, key=lambda s: (-s.score, -s.visible_fraction))
+    merged = merge_same_control(scored, decision, settings.same_control_distance)
+    return sorted(merged, key=lambda s: (-s.score, -s.visible_fraction))
+
+
+def merge_same_control(
+    scored: list[ScoredElement], decision: EditDecision, max_distance: float
+) -> list[ScoredElement]:
+    """Réunit les morceaux d'un même contrôle que l'OCR a scindés dans le temps.
+
+    L'index découpe un élément dès qu'une lecture manque ou que la boîte bouge
+    un peu. Sur la démo Sales Report, le bouton « Clear » était ainsi deux
+    éléments consécutifs, `scr-0957` puis `scr-1082`, au même endroit à un
+    centième près et jamais affichés ensemble — et le rapprochement refusait
+    le cadre pour « ambiguïté ». Même texte et même position : c'est le même
+    contrôle. Des libellés identiques à des positions différentes (six lignes
+    « Nordic Tech » dans un tableau) restent des rivaux, à juste titre.
+
+    La présence cumulée est la somme des présences, plafonnée à 1 ; l'élément
+    fusionné couvre la période de tous ses morceaux.
+    """
+    groups: list[list[ScoredElement]] = []
+    for item in scored:
+        key = match_key(item.element.text)
+        center = _center(item.element.box)
+        for group in groups:
+            head = group[0].element
+            if match_key(head.text) == key and _distance(_center(head.box), center) <= max_distance:
+                group.append(item)
+                break
+        else:
+            groups.append([item])
+
+    merged = []
+    for group in groups:
+        if len(group) == 1:
+            merged.append(group[0])
+            continue
+        main = max(group, key=lambda s: s.visible_fraction)
+        element = main.element.model_copy(update={
+            "first_seen": min(s.element.first_seen for s in group),
+            "last_seen": max(s.element.last_seen for s in group),
+            "occurrences": sum(s.element.occurrences for s in group),
+            "confidence": max(s.element.confidence for s in group),
+        })
+        merged.append(ScoredElement(
+            element=element,
+            score=max(s.score for s in group),
+            visible_fraction=min(1.0, sum(s.visible_fraction for s in group)),
+        ))
+    return merged
+
+
+def _center(box: BoundingBox) -> tuple[float, float]:
+    return box.x + box.width / 2, box.y + box.height / 2
+
+
+def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
 def distance_to_box(box: BoundingBox, point: tuple[float, float]) -> float:
@@ -323,6 +395,7 @@ def match(
     index: ScreenTextIndex,
     config: PipelineConfig,
     cursor_track: CursorTrack | None = None,
+    glossary: Glossary | None = None,
 ) -> OverlayMatchReport:
     named = [
         d for d in decisions if d.ui_reference and d.ui_reference.kind == "named_control"
@@ -330,7 +403,7 @@ def match(
     candidates = [
         judge(
             d,
-            gather_candidates(d, index.elements, config),
+            gather_candidates(d, index.elements, config, glossary),
             config,
             cursor_positions_during(cursor_track, d, config),
         )
@@ -481,7 +554,8 @@ def main(
             cursor_path,
         )
 
-    report = match(decisions, index, config, cursor_track)
+    glossary = load_glossary(PROJECT_ROOT / config.glossary_file)
+    report = match(decisions, index, config, cursor_track, glossary)
     write_report(report, data_dir / "overlay_candidates.json")
 
     if contact_sheet:

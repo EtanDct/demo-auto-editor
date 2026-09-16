@@ -31,7 +31,7 @@ from llm_client import load_llm
 # `merge_into_sentences` reste importable d'ici : c'est le secours des
 # transcriptions sans horodatage des mots.
 from segmentation import merge_into_sentences, split_into_sentences  # noqa: F401
-from translation_checks import relevant_terms, review
+from translation_checks import load_glossary, relevant_terms, review
 from pipeline_config import PROJECT_ROOT, PipelineConfig, load_config
 from schemas import (
     Chapter,
@@ -111,13 +111,6 @@ def load_transcript(path: Path) -> list[TranscriptSegment]:
         )
     raw = json.loads(path.read_text(encoding="utf-8"))
     return [TranscriptSegment.model_validate(item) for item in raw]
-
-
-def load_glossary(path: Path) -> Glossary:
-    if not path.exists():
-        return Glossary()
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return Glossary.model_validate(raw)
 
 
 def _build_user_prompt(text_fr: str, glossary: Glossary) -> str:

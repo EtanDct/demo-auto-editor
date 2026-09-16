@@ -166,6 +166,10 @@ overlay_matching:
   # couvre que le texte, pas toute la zone cliquable, d'où une marge étroite.
   # Plus large (0.06 testé), un pointeur qui passe à côté suffisait à trancher.
   cursor_max_distance: 0.02    # 0 = désactive l'arbitrage par le pointeur
+  # Deux lectures du même texte dont les centres sont plus proches que ça sont
+  # le même contrôle, scindé par l'OCR dans le temps (lecture manquée, boîte
+  # qui bouge d'un pixel) : on les réunit au lieu de les croire rivales.
+  same_control_distance: 0.015
   min_visible_fraction: 0.5    # l'élément doit être affiché la moitié du segment
   min_box_area: 0.0002         # sous ce seuil, boîte trop petite pour être crédible
   max_box_area: 0.25           # au-dessus, l'OCR a capturé un bloc, pas un contrôle

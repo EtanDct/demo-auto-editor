@@ -48,7 +48,11 @@ avec le moment où le narrateur désigne un élément d'interface) :
   et l'interface.
 
 L'étape `match` rapproche le tout et propose une incrustation quand la
-correspondance ne laisse pas de place au doute. Elle est réglée pour la
+correspondance ne laisse pas de place au doute. Deux cas qui passaient pour des
+doutes n'en sont pas, et sont traités : le libellé dit en français et affiché en
+anglais (« revenus » / « Revenue ») est aussi essayé sous sa traduction du
+glossaire ; et un même contrôle que l'OCR a scindé dans le temps (même texte,
+même place, lu en deux morceaux) n'est plus pris pour son propre rival. Elle est réglée pour la
 précision, pas pour le rappel : elle refuse sur score insuffisant, sur
 ambiguïté (le même libellé affiché à deux endroits), sur élément trop fugace ou
 sur boîte aberrante, et consigne le motif de chaque refus. Seule la position du
