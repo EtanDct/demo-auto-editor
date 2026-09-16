@@ -14,7 +14,7 @@ Aucune donnée SAP (écran, audio, texte) ne doit être transmise à un service 
 vidéo source
   -> faster-whisper local (transcription FR)
   -> LLM local (traduction EN + conducteur de montage)
-  -> moteur vocal local (Kokoro / Piper)
+  -> moteur vocal local (Kokoro)
   -> recalage des timecodes
   -> FFmpeg (montage, overlays, sous-titres)
 ```
@@ -192,8 +192,8 @@ Sur la démo Sales Report, comparée à l'ancienne voix Piper `en_US-amy-medium`
 | Mots reconnus par Whisper | 96 % | 99 % |
 
 Le débit plus rapide laisse davantage de blanc à retirer : la vidéo livrée passe
-de 111 s à 100 s. Piper reste disponible — `tts.engine: piper` avec
-`tts.voice: en_US-amy-medium` — et `tts.speed` règle le débit de Kokoro.
+de 111 s à 100 s. Piper a depuis été retiré du projet ; `tts.voice` change de
+voix et `tts.speed` règle le débit.
 
 ## Cartons d'introduction et de fin
 

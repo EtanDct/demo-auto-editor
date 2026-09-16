@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 import download_models
-from build_narration import KokoroVoice, load_voice, write_wav
+from build_narration import KokoroVoice, write_wav
 from download_models import download_kokoro, kokoro_paths
 from pipeline_config import PROJECT_ROOT
 
@@ -57,15 +57,10 @@ def test_une_synthese_vide_est_une_erreur_explicite(tmp_path):
         write_wav(np.array([], dtype=np.float32), 24000, tmp_path / "empty.wav")
 
 
-# --- choix du moteur --------------------------------------------------------
+# --- voix --------------------------------------------------------
 
-def test_kokoro_af_heart_est_la_voix_par_defaut(config):
-    assert (config.tts.engine, config.tts.voice) == ("kokoro", "af_heart")
-
-
-def test_un_moteur_inconnu_est_refuse_par_la_configuration(config):
-    with pytest.raises(ValueError):
-        type(config.tts).model_validate({**config.tts.model_dump(), "engine": "espeak"})
+def test_af_heart_est_la_voix_par_defaut(config):
+    assert config.tts.voice == "af_heart"
 
 
 def test_sans_fichiers_kokoro_le_message_dit_comment_les_obtenir(config, monkeypatch, tmp_path):
@@ -73,17 +68,7 @@ def test_sans_fichiers_kokoro_le_message_dit_comment_les_obtenir(config, monkeyp
     monkeypatch.setattr(type(patched.paths), "resolve", lambda self, field: tmp_path)
 
     with pytest.raises(FileNotFoundError, match="download_models.py --only tts"):
-        load_voice(patched)
-
-
-def test_sans_binaire_piper_le_message_dit_comment_l_obtenir(config, monkeypatch, tmp_path):
-    patched = config.model_copy(deep=True)
-    patched.tts.engine = "piper"
-    patched.tts.voice = "en_US-amy-medium"
-    monkeypatch.setattr(type(patched.paths), "resolve", lambda self, field: tmp_path)
-
-    with pytest.raises(FileNotFoundError, match="Piper"):
-        load_voice(patched)
+        KokoroVoice(patched)
 
 
 # --- téléchargement ---------------------------------------------------------

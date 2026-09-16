@@ -1,7 +1,3 @@
-# Piper (tts.engine: piper, alternative à Kokoro) n'est pas dans ce fichier :
-# piper-tts (PyPI) dépend de piper-phonemize, qui n'a pas de wheel Windows.
-# scripts/download_models.py télécharge à la place le binaire officiel
-# (rhasspy/piper releases), invoqué en CLI par scripts/build_narration.py.
 faster-whisper==1.0.3
 huggingface_hub==0.25.2
 llama-cpp-python==0.3.2
@@ -11,9 +7,9 @@ typer==0.27.2
 numpy==2.4.6
 psutil==6.0.0
 
-# Voix off Kokoro (tts.engine: kokoro). Tourne sur onnxruntime, déjà tiré par
-# l'OCR, et embarque espeak-ng dans ses dépendances : rien à installer côté
-# système, contrairement à piper-tts. Exige numpy >= 2.
+# Voix off Kokoro. Tourne sur onnxruntime, déjà tiré par l'OCR, et embarque
+# espeak-ng dans ses dépendances : rien à installer côté système. Ses fichiers
+# de modèle sont tirés par scripts/download_models.py. Exige numpy >= 2.
 kokoro-onnx==0.6.1
 
 # OCR local pour l'étape `screen` (index du texte affiché à l'écran).

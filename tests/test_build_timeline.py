@@ -24,7 +24,7 @@ def make_decision(
         text_fr="texte source",
         text_en="source text",
         narration=NarrationSpec(
-            voice="en_US-amy-medium",
+            voice="af_heart",
             pause_before_ms=pause_before_ms,
             pause_after_ms=pause_after_ms,
         ),
@@ -36,8 +36,8 @@ def make_narration(seg_id: str, duration: float) -> NarrationManifestEntry:
         segment_id=seg_id,
         audio_file=f"audio/narration/{seg_id}.wav",
         duration=duration,
-        provider="piper",
-        voice="en_US-amy-medium",
+        provider="kokoro",
+        voice="af_heart",
     )
 
 

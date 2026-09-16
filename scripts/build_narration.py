@@ -1,18 +1,15 @@
 """Étape D : voix off IA locale (plan-technique.md, section 3).
 
-Synthétise chaque `text_en` du conducteur de montage et écrit un fichier WAV par
+Synthétise chaque `text_en` du conducteur de montage avec Kokoro-82M, via
+`kokoro-onnx` sur onnxruntime (local, sans appel réseau ; voir
+scripts/download_models.py pour ses fichiers), et écrit un fichier WAV par
 segment, plus data/narration_manifest.json avec la durée réelle de chaque
-segment. Deux moteurs, choisis par `tts.engine`, tous deux locaux et sans appel
-réseau (voir scripts/download_models.py pour leurs fichiers) :
+segment.
 
-- **kokoro** (défaut) : Kokoro-82M via `kokoro-onnx`, sur onnxruntime. Voix
-  nettement plus naturelle. Le modèle est chargé une fois pour toute la vidéo.
-  Au-delà de 510 phonèmes, le paquet découpe lui-même le texte en morceaux et les
-  recolle : une phrase longue n'est pas tronquée ;
-- **piper** : binaire officiel, invoqué en ligne de commande. Plus rapide.
-
-Le fichier WAV porte sa propre fréquence (24 kHz pour Kokoro, 22,05 kHz pour
-Piper) : le rendu rééchantillonne tout à la fréquence d'export, rien à accorder.
+Le modèle est chargé une fois pour toute la vidéo. Au-delà de 510 phonèmes, le
+paquet découpe lui-même le texte en morceaux et les recolle : une phrase longue
+n'est pas tronquée. Le WAV est à 24 kHz ; le rendu rééchantillonne tout à la
+fréquence d'export.
 
 Les pauses (`narration.pause_before_ms` / `pause_after_ms`) ne sont pas
 incrustées dans l'audio ici : elles sont appliquées au niveau de la
@@ -24,16 +21,14 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 import wave
 from pathlib import Path
 
 import numpy as np
-
 import typer
 import yaml
 
-from download_models import kokoro_paths, parse_piper_voice, piper_executable_path
+from download_models import kokoro_paths
 from pipeline_config import PipelineConfig, load_config
 from schemas import EditDecision, NarrationManifestEntry
 
@@ -51,37 +46,11 @@ def load_edl(path: Path) -> list[EditDecision]:
     return [EditDecision.model_validate(item) for item in raw]
 
 
-def resolve_voice_model_path(config: PipelineConfig) -> Path:
-    lang_family, lang_code, speaker, quality = parse_piper_voice(config.tts.voice)
-    return (
-        config.paths.resolve("models_dir")
-        / "piper"
-        / lang_family
-        / lang_code
-        / speaker
-        / quality
-        / f"{config.tts.voice}.onnx"
-    )
-
-
-def synthesize_segment(piper_exe: Path, model_path: Path, text: str, out_path: Path) -> float:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        [str(piper_exe), "-m", str(model_path), "--output_file", str(out_path)],
-        input=text,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    with wave.open(str(out_path), "rb") as wav_file:
-        return round(wav_file.getnframes() / wav_file.getframerate(), 3)
-
-
 def write_wav(samples, sample_rate: int, out_path: Path) -> float:
     """WAV mono 16 bits depuis des échantillons flottants ; renvoie la durée.
 
-    Écrit en 16 bits plutôt qu'en flottant : c'est ce que produit Piper, et un
-    même format pour les deux moteurs évite toute surprise au mixage.
+    16 bits plutôt que flottant : le format le plus largement relu, par FFmpeg
+    comme par les outils d'écoute.
     """
     audio = np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0)
     if audio.size == 0:
@@ -111,9 +80,9 @@ class KokoroVoice:
         # La phonémisation (espeak, via phonemizer) signale « words count
         # mismatch » dès qu'elle découpe les mots autrement que le texte — une
         # ligne sur deux sur la démo Sales Report. Sans conséquence : retranscrites
-        # par Whisper, les 15 phrases rendaient 99 % des mots (Piper : 96 %), y
-        # compris celles qui déclenchaient l'avertissement. Seul ce journal-là
-        # est rabaissé, les erreurs passent toujours.
+        # par Whisper, les 15 phrases rendaient 99 % des mots (l'ancienne voix
+        # Piper : 96 %), y compris celles qui déclenchaient l'avertissement. Seul
+        # ce journal-là est rabaissé, les erreurs passent toujours.
         logging.getLogger("phonemizer").setLevel(logging.ERROR)
 
         self.engine = Kokoro(str(model_path), str(voices_path))
@@ -136,35 +105,8 @@ class KokoroVoice:
         return write_wav(samples, sample_rate, out_path)
 
 
-class PiperVoice:
-    def __init__(self, config: PipelineConfig):
-        self.exe = piper_executable_path(config.paths.resolve("models_dir"))
-        if not self.exe.exists():
-            raise FileNotFoundError(
-                f"Binaire Piper introuvable : {self.exe}. Lance d'abord "
-                "'python scripts/download_models.py --only tts'."
-            )
-        self.model_path = resolve_voice_model_path(config)
-        if not self.model_path.exists():
-            raise FileNotFoundError(
-                f"Voix Piper introuvable : {self.model_path}. Lance d'abord "
-                "'python scripts/download_models.py --only tts'."
-            )
-
-    def synthesize(self, text: str, out_path: Path) -> float:
-        return synthesize_segment(self.exe, self.model_path, text, out_path)
-
-
-def load_voice(config: PipelineConfig):
-    if config.tts.engine == "kokoro":
-        return KokoroVoice(config)
-    if config.tts.engine == "piper":
-        return PiperVoice(config)
-    raise ValueError(f"Moteur de voix inconnu : {config.tts.engine!r} (attendu kokoro ou piper).")
-
-
 def build_narration(decisions: list[EditDecision], config: PipelineConfig) -> list[NarrationManifestEntry]:
-    voice = load_voice(config)
+    voice = KokoroVoice(config)
 
     narration_dir = config.paths.resolve("audio_dir") / "narration"
     entries = []
@@ -177,7 +119,7 @@ def build_narration(decisions: list[EditDecision], config: PipelineConfig) -> li
                 segment_id=decision.id,
                 audio_file=str(out_path.relative_to(config.paths.resolve("audio_dir").parent)),
                 duration=duration,
-                provider=config.tts.engine,
+                provider="kokoro",
                 # La voix réellement utilisée, et non celle notée dans le
                 # conducteur au moment de la traduction : changer de voix ne
                 # demande pas de retraduire.
