@@ -7,7 +7,9 @@ Construit un unique filter_complex FFmpeg qui :
    "silencieux" entre deux segments, inchangés) ;
 2. applique l'effet visuel (`visual_action`) de chaque segment via
    scripts/overlays.py ;
-3. recolle tous les morceaux (`concat`) puis incruste les sous-titres ;
+3. recolle tous les morceaux (`concat`), pose l'image sur le canevas de
+   livraison et habille ses bandes (scripts/frame_layout.py), puis incruste les
+   sous-titres ;
 4. construit la piste audio finale en plaçant chaque narration à son
    `new_start` (avec `atempo` si une accélération légère a été retenue à
    l'étape E, et `adelay` pour le décalage) ;
@@ -36,12 +38,22 @@ import typer
 from build_narration import load_edl
 from build_timeline import load_narration_manifest
 from cursor_overlays import cursor_filter_for
-from intro_card import prepend_intro
+from frame_layout import (
+    BandContent,
+    Layout,
+    build_layout_chains,
+    chapter_windows,
+    compute_layout,
+    echo_windows,
+)
+from intro_card import add_cards, load_intro_text
 from detect_cursor import load_track
 from match_overlays import load_screen_index
 from overlays import overlay_filter_for
-from pipeline_config import PipelineConfig, load_config
+from pipeline_config import PROJECT_ROOT, PipelineConfig, load_config
+from subtitles import build_ass, build_cues
 from schemas import (
+    ChapterPlan,
     CursorTrack,
     EditDecision,
     NarrationManifestEntry,
@@ -116,20 +128,24 @@ def build_pieces(
     return pieces
 
 
-def _escape_filter_path(path: Path) -> str:
-    return str(path).replace("\\", "/").replace(":", "\\:")
-
-
 def build_video_filter(
     pieces: list[Piece],
     config: PipelineConfig,
     width: int,
     height: int,
-    srt_path: Path,
+    subtitles_path: Path,
     fps: float,
     cursor_track: CursorTrack | None = None,
     screen_elements: list[ScreenElement] | None = None,
+    layout: Layout | None = None,
+    band: BandContent | None = None,
+    logo_input: int | None = None,
 ) -> tuple[str, str]:
+    """Graphe vidéo complet. Sans `layout`, l'image est livrée à sa taille."""
+    if layout is None:
+        layout = Layout(width, height, width, height, 0, 0, 0, 0)
+    if band is None:
+        band = BandContent(total_duration=total_output_duration(pieces))
     chains = []
     labels = []
 
@@ -182,9 +198,35 @@ def build_video_filter(
     # réel). On sur-étend puis on coupe à la durée exacte en sortie (-t dans
     # render()) plutôt que de chercher un arrondi parfait par morceau.
     chains.append("[vconcat]tpad=stop_mode=clone:stop_duration=2.000[vpadded]")
-    chains.append(f"[vpadded]subtitles='{_escape_filter_path(srt_path)}'[vout]")
+    # Mise en page APRÈS les cadres : ils sont en coordonnées de l'image rognée.
+    layout_chains, label = build_layout_chains(
+        "vpadded", layout, band, config, fps, subtitles_path, logo_input
+    )
+    chains += layout_chains
 
-    return ";".join(chains), "[vout]"
+    return ";".join(chains), label
+
+
+def load_chapters(config: PipelineConfig) -> ChapterPlan | None:
+    path = config.paths.resolve("data_dir") / "chapters.json"
+    if not (config.layout.chapters_enabled and path.exists()):
+        return None
+    return ChapterPlan.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def resolve_logo(config: PipelineConfig) -> Path | None:
+    """Logo à incruster, vérifié avant de lancer des minutes d'encodage."""
+    if not config.layout.logo_path:
+        return None
+    path = Path(config.layout.logo_path)
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Logo introuvable : {path}. Corrige layout.logo_path dans config.yaml, "
+            "ou mets-le à null."
+        )
+    return path
 
 
 def total_output_duration(pieces: list[Piece]) -> float:
@@ -262,6 +304,21 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
     if not srt_path.exists():
         raise FileNotFoundError(f"Sous-titres introuvables : {srt_path}. Lance d'abord --step subtitles.")
 
+    layout = compute_layout(width, height, config)
+    logo_path = resolve_logo(config)
+    logger.info(
+        "Mise en page : image %dx%d posée sur %dx%d, bande haute %dpx, bande basse %dpx%s",
+        layout.content_width, layout.content_height, layout.width, layout.height,
+        layout.top_height, layout.bottom_height,
+        "" if layout.subtitles_in_band else " (sous-titres sur l'image)",
+    )
+    # Les sous-titres incrustés passent par un ASS positionné sur le canevas ;
+    # le SRT reste le livrable.
+    ass_path = data_dir / "subtitles_en.ass"
+    ass_path.write_text(
+        build_ass(build_cues(decisions, timeline_by_id, config), layout, config), encoding="utf-8"
+    )
+
     pieces = build_pieces(decisions, timeline_entries, source_duration)
     total_duration = total_output_duration(pieces)
     cursor_path = data_dir / "cursor_track.json"
@@ -275,9 +332,20 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
             cursor_path,
         )
 
-    video_filter, video_label = build_video_filter(
-        pieces, config, width, height, srt_path, inspection["fps"], cursor_track, screen_elements
+    intro_text = load_intro_text(config)
+    chapters = chapter_windows(load_chapters(config), pieces, total_duration)
+    band = BandContent(
+        total_duration=total_duration,
+        chapters=chapters,
+        title=intro_text.title if intro_text else None,
+        echoes=echo_windows(pieces) if config.layout.echo_enabled else [],
     )
+    if layout.top_height > 0:
+        logger.info(
+            "Bande haute : %s ; %d rappel(s) d'élément encadré",
+            f"{len(chapters)} chapitre(s)" if chapters else f"titre {band.title!r}",
+            len(band.echoes),
+        )
     audio_filter, audio_files, audio_label = build_audio_filter(
         decisions,
         timeline_by_id,
@@ -285,6 +353,12 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
         audio_input_start_index=1,
         total_duration=total_duration,
         config=config,
+    )
+    # Le logo entre après les narrations : les index audio restent ceux attendus.
+    logo_input = 1 + len(audio_files) if logo_path is not None else None
+    video_filter, video_label = build_video_filter(
+        pieces, config, width, height, ass_path, inspection["fps"], cursor_track, screen_elements,
+        layout, band, logo_input,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -303,6 +377,8 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
     cmd = ["ffmpeg", "-y", "-i", str(source_video)]
     for f in audio_files:
         cmd += ["-i", str(config.paths.resolve("audio_dir").parent / f)]
+    if logo_path is not None:
+        cmd += ["-i", str(logo_path)]
     cmd += [
         "-/filter_complex", str(filter_script),
         "-map", video_label,
@@ -311,6 +387,9 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
         "-crf", str(config.export.crf),
         "-c:a", config.export.audio_codec,
         "-ar", str(config.export.audio_sample_rate),
+        # Stéréo, comme les cartons : le collage sans réencodage garde l'en-tête
+        # du premier fichier, et des narrations mono s'y retrouvaient mal décrites.
+        "-ac", "2",
         "-t", f"{total_duration:.3f}",
         str(final_path),
     ]
@@ -326,7 +405,7 @@ def render(config: PipelineConfig, dry_run: bool = False) -> Path:
     logger.info("Rendu du master vers %s", final_path)
     subprocess.run(cmd, check=True)
 
-    prepend_intro(final_path, config, width, height, inspection["fps"])
+    add_cards(final_path, config, layout.width, layout.height, inspection["fps"])
 
     preview_cmd = [
         "ffmpeg", "-y", "-i", str(final_path),

@@ -162,6 +162,43 @@ class IntroConfig(BaseModel):
     subtitle_size: int = 40
 
 
+class LayoutConfig(BaseModel):
+    enabled: bool = True
+    width: int = 1920
+    height: int = 1080
+    background: str = "0x354a5f"
+    top_height: int = 64
+    min_bottom_height: int = 110
+    band_padding: int = 32
+    font_name: str = "Arial"
+    subtitle_size: int = 40
+    subtitle_color: str = "white"
+    top_text_size: int = 28
+    text_color: str = "white"
+    muted_color: str = "0xC5D0DA"
+    accent_color: str = "0xF5B800"
+    track_color: str = "0x24333F"
+    fade_seconds: float = 0.3
+    chapters_enabled: bool = True
+    chapter_seconds: float = 35.0
+    max_chapters: int = 6
+    max_chapter_chars: int = 32
+    echo_enabled: bool = True
+    echo_text_color: str = "0x1A1A1A"
+    progress_enabled: bool = True
+    progress_thickness: int = 4
+    logo_path: str | None = None
+    logo_height: int = 36
+
+
+class OutroConfig(BaseModel):
+    enabled: bool = True
+    duration_seconds: float = 4.0
+    fade_seconds: float = 0.6
+    title: str | None = None
+    subtitle: str | None = "Thanks for watching"
+
+
 class ExportConfig(BaseModel):
     container: str = "mp4"
     video_codec: str = "libx264"
@@ -189,6 +226,8 @@ class PipelineConfig(BaseModel):
     overlay_matching: OverlayMatchingConfig
     overlays: OverlaysConfig
     intro: IntroConfig
+    outro: OutroConfig = OutroConfig()
+    layout: LayoutConfig = LayoutConfig()
     export: ExportConfig
     glossary_file: str
 
