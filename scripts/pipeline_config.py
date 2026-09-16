@@ -127,6 +127,7 @@ class OverlayMatchingConfig(BaseModel):
     min_score: float = 0.75
     ambiguity_margin: float = 0.1
     cursor_max_distance: float = 0.02
+    same_control_distance: float = 0.015
     min_visible_fraction: float = 0.5
     min_box_area: float = 0.0002
     max_box_area: float = 0.25

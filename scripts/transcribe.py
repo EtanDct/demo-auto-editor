@@ -15,7 +15,7 @@ import typer
 
 from hardware import detect_hardware
 from pipeline_config import PipelineConfig, load_config
-from schemas import TranscriptSegment
+from schemas import TranscriptSegment, TranscriptWord
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
@@ -54,7 +54,11 @@ def transcribe(audio_path: Path, config: PipelineConfig) -> list[TranscriptSegme
     model = WhisperModel(model_source, device=device, compute_type=compute_type)
 
     logger.info("Transcription de %s (langue=%s)", audio_path, config.whisper.language)
-    raw_segments, info = model.transcribe(str(audio_path), language=config.whisper.language)
+    # Horodatage de chaque mot : le découpage en phrases (scripts/segmentation.py)
+    # coupe au mot près, là où Whisper ne coupe que sur les silences.
+    raw_segments, info = model.transcribe(
+        str(audio_path), language=config.whisper.language, word_timestamps=True
+    )
     logger.info("Langue détectée=%s, probabilité=%.2f", info.language, info.language_probability)
 
     segments = [
@@ -63,6 +67,11 @@ def transcribe(audio_path: Path, config: PipelineConfig) -> list[TranscriptSegme
             start=round(seg.start, 3),
             end=round(seg.end, 3),
             text_fr=seg.text.strip(),
+            words=[
+                TranscriptWord(text=w.word.strip(), start=round(w.start, 3), end=round(w.end, 3))
+                for w in (seg.words or [])
+                if w.word.strip()
+            ],
         )
         for i, seg in enumerate(raw_segments)
     ]

@@ -4,7 +4,8 @@ Génère data/subtitles_en.srt à partir du conducteur de montage (text_en) et
 des timecodes finaux de data/timeline.json (après recalage, étape E) :
 
 - deux lignes maximum, longueur limitée par ligne ;
-- segmentation greedy alignée sur les mots (pas de coupure en milieu de mot) ;
+- coupure sur les mots, jamais au milieu d'un mot ; entre deux sous-titres,
+  de préférence sur une fin de phrase ou une virgule ;
 - un texte trop long pour un seul sous-titre est réparti sur plusieurs, le
   temps du segment étant partagé au prorata du nombre de mots. Il n'est jamais
   tronqué : des mots qui disparaissent de la vidéo livrée ne se voient pas au
@@ -69,9 +70,50 @@ def split_into_cues(text: str, max_chars_per_line: int, max_lines: int) -> list[
     lignes peuvent porter. L'ancienne version tronquait alors le texte, avec un
     simple avertissement : des mots disparaissaient de la vidéo livrée. On
     produit plutôt plusieurs sous-titres successifs.
+
+    Où couper entre deux sous-titres : remplis au maximum, ils se coupaient là où
+    la place manquait, quitte à laisser « …one for revenues, one for the » en
+    suspens. Un sous-titre plein est donc raccourci jusqu'à la dernière fin de
+    phrase qu'il contient, à défaut jusqu'à la dernière virgule — pourvu qu'il
+    reste au moins à moitié plein, sans quoi on retrouverait l'excès inverse,
+    une suite de sous-titres de trois mots.
     """
-    lines = wrap_lines(text, max_chars_per_line)
-    return [lines[i : i + max_lines] for i in range(0, len(lines), max_lines)] or []
+    words = text.split()
+    cues: list[list[str]] = []
+    start = 0
+    while start < len(words):
+        end = start + 1
+        while end < len(words) and _fits(words[start : end + 1], max_chars_per_line, max_lines):
+            end += 1
+        if end < len(words):
+            end = _natural_break(words, start, end)
+        cues.append(wrap_lines(" ".join(words[start:end]), max_chars_per_line))
+        start = end
+    return cues
+
+
+STRONG_PUNCTUATION = (".", "!", "?", "…")
+SOFT_PUNCTUATION = (",", ";", ":")
+MIN_CUE_FILL = 0.5
+
+
+def _fits(words: list[str], max_chars_per_line: int, max_lines: int) -> bool:
+    return len(wrap_lines(" ".join(words), max_chars_per_line)) <= max_lines
+
+
+def _natural_break(words: list[str], start: int, end: int) -> int:
+    """Fin de sous-titre sur une ponctuation, si elle ne le vide pas trop.
+
+    `end` est la fin maximale (exclue) ; on cherche en reculant une fin de
+    phrase, puis une virgule, qui garde au moins `MIN_CUE_FILL` des mots.
+    """
+    required = max(1, int((end - start) * MIN_CUE_FILL))
+    earliest_last = start + required - 1
+    for punctuation in (STRONG_PUNCTUATION, SOFT_PUNCTUATION):
+        for last in range(end - 1, earliest_last - 1, -1):
+            if words[last].endswith(punctuation):
+                return last + 1
+    return end
 
 
 def _format_timestamp(seconds: float) -> str:

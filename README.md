@@ -19,11 +19,11 @@ vidéo source
   -> FFmpeg (montage, overlays, sous-titres)
 ```
 
-L'étape optionnelle `crop` retire au préalable le bandeau du navigateur —
+L'étape `crop` retire au préalable le bandeau du navigateur —
 onglets, URL, favoris — pour ne garder que la page présentée. Aucune hauteur
 n'est écrite en dur : la frontière est mesurée sur chaque vidéo, d'abord à la
-couleur de la barre supérieure de l'application (`#354a5f` sur le thème Fiori
-Belize, réglable dans `crop.anchor_colors`), sinon en repérant à partir d'où
+couleur de la barre supérieure de l'application (`#354a5f`, celle des thèmes Fiori
+Quartz, réglable dans `crop.anchor_colors`), sinon en repérant à partir d'où
 l'image cesse d'être figée. On cherche où commence l'application plutôt qu'où
 finit le navigateur : le bandeau du haut n'a aucune signature stable — thème
 clair ou sombre, avec ou sans favoris, un navigateur ou un autre — alors que la
@@ -35,10 +35,16 @@ image de contrôle dans `logs/crop_preview.jpg`. Si la teinte est absente et que
 la seconde méthode ne tranche pas franchement, elle refuse de rogner plutôt que
 d'entamer l'application.
 
+Tous les thèmes Fiori ne s'y prêtent pas : Horizon a une barre blanche comme la
+page, Belize une barre transparente, et Horizon Dark une teinte presque
+identique aux onglets d'un navigateur en thème sombre — l'ajouter sans
+précaution ferait prendre le navigateur pour l'application. Les teintes et
+leurs limites sont détaillées dans `config.yaml`.
+
 Deux briques préparent le montage automatique (synchroniser une incrustation
 avec le moment où le narrateur désigne un élément d'interface) :
 
-- l'étape optionnelle `screen` indexe par OCR local le texte affiché et à quel
+- l'étape `screen` indexe par OCR local le texte affiché et à quel
   moment (`data/screen_elements.json`) ;
 - l'étape `translate` fait déclarer au LLM, pour chaque segment, ce que le
   narrateur désigne (`ui_reference`) : un élément **nommé** par son libellé,
@@ -48,14 +54,19 @@ avec le moment où le narrateur désigne un élément d'interface) :
   et l'interface.
 
 L'étape `match` rapproche le tout et propose une incrustation quand la
-correspondance ne laisse pas de place au doute. Elle est réglée pour la
+correspondance ne laisse pas de place au doute. Deux cas qui passaient pour des
+doutes n'en sont pas, et sont traités : le libellé dit en français et affiché en
+anglais (« revenus » / « Revenue ») est aussi essayé sous sa traduction du
+glossaire ; et un même contrôle que l'OCR a scindé dans le temps (même texte,
+même place, lu en deux morceaux) n'est plus pris pour son propre rival. Elle est réglée pour la
 précision, pas pour le rappel : elle refuse sur score insuffisant, sur
 ambiguïté (le même libellé affiché à deux endroits), sur élément trop fugace ou
 sur boîte aberrante, et consigne le motif de chaque refus. Seule la position du
 pointeur peut sauver un candidat écarté pour ambiguïté, et uniquement si elle
 tombe **sur** lui : le pointeur ne fabrique jamais une correspondance à partir
 de rien et ne renverse jamais un appariement déjà net. Rien n'atteint le
-conducteur de montage sans `--apply`, et `--contact-sheet` produit une planche
+conducteur de montage sans `--apply` — que le pipeline complet passe, pour que
+les cadres soient posés au rendu — et `--contact-sheet` produit une planche
 de relecture (cadre dessiné sur la frame, légende avec score et durée
 d'affichage) : valider une correspondance à l'œil prend deux secondes, saisir
 les coordonnées à la main en prend deux minutes.
@@ -125,40 +136,36 @@ FFmpeg doit être installé séparément et disponible dans le PATH (sous Window
 ## Utilisation
 
 ```bash
-# Pipeline complet
-python run.py --input input/source.mp4
+# Pipeline complet, de la vidéo au rendu : une seule commande
+python run.py --input input/demo.mp4
 
-# Étape par étape (débogage / reprise partielle)
-python run.py --step transcribe
-python run.py --step translate
-python run.py --step narrate
-python run.py --step retime
-python run.py --step subtitles
+# Reprendre à une étape, jusqu'à la fin (après une correction, un échec…)
+python run.py --from translate
+
+# Une seule étape (débogage)
 python run.py --step render
-python run.py --step validate
-
-# Régénérer seulement les chapitres, sans retraduire
-python scripts/translate.py --chapters-only
-
-# Hors pipeline par défaut : retrait du bandeau de navigateur
-python run.py --step crop
-
-# Hors pipeline par défaut : index OCR du texte à l'écran (plusieurs minutes)
-python run.py --step screen
-python scripts/detect_screen_text.py --max-seconds 40   # essai sur une tranche
-python scripts/detect_screen_text.py --regroup          # re-règle sans relancer l'OCR
-
-# Hors pipeline par défaut : suivi du pointeur (réutilise les frames de `screen`)
-python run.py --step cursor
-
-# Hors pipeline par défaut : appariement narrateur / écran
-python run.py --step match                              # rapport seul
-python scripts/match_overlays.py --contact-sheet        # + planche de relecture
-python scripts/match_overlays.py --apply                # reporter dans l'EDL
 ```
 
-Les étapes lisent et écrivent les fichiers de `data/` : après correction d'un
-conducteur de montage à la main, il suffit de reprendre à `retime`.
+Le pipeline complet enchaîne douze étapes, dans l'ordre où chacune trouve ce
+qu'elle attend : `inspect`, `crop` (retrait du bandeau de navigateur),
+`transcribe`, `translate`, `screen` (OCR du texte à l'écran, la plus longue),
+`cursor` (trajectoire du pointeur), `match` (rapprochement narrateur/écran,
+reporté dans le conducteur de montage), `narrate`, `retime`, `subtitles`,
+`render`, `validate`. Une étape qui échoue arrête le passage en indiquant la
+commande de reprise ; à la fin, un bilan donne la durée de chaque étape.
+
+Quelques commandes de mise au point, hors pipeline :
+
+```bash
+python scripts/translate.py --chapters-only              # régénérer les chapitres seuls
+python scripts/detect_screen_text.py --max-seconds 40    # OCR sur une tranche
+python scripts/detect_screen_text.py --regroup           # re-régler sans relancer l'OCR
+python scripts/match_overlays.py --contact-sheet         # rapport de rapprochement, sans rien écrire
+```
+
+Les étapes lisent et écrivent les fichiers de `data/` : après correction du
+texte anglais dans le conducteur de montage, `python run.py --from narrate`
+régénère la voix et tout ce qui en dépend.
 
 ## Organisation du dépôt
 
@@ -174,6 +181,33 @@ output/      rendus finaux (non versionné)
 logs/        journaux d'exécution
 models/      poids des modèles téléchargés (non versionné)
 ```
+
+## Traduction
+
+La traduction passe par un LLM local de 3B paramètres, qui suit mal les
+consignes générales. Relue segment par segment sur la démo Sales Report, elle
+rendait « commande » par *command*, réduisait 30 mots à « Click Clear. », et
+traduisait des moitiés de phrases coupées par Whisper (« moyen par commande »
+→ « by command »). Quatre mécanismes y répondent :
+
+- **découpage au mot près** (`scripts/segmentation.py`) : Whisper horodate
+  chaque mot, et les segments sont recoupés sur la ponctuation. Une phrase trop
+  longue est coupée à ses virgules ou ses silences, puis ses morceaux sont
+  réassemblés jusqu'à 14 s ;
+- **glossaire imposé** (`data/glossary.yaml`) : vocabulaire des rapports de
+  ventes et de Fiori, appliqué aussi au titre du carton ;
+- **relecture automatique** (`scripts/translation_checks.py`) : terme du
+  glossaire manquant, nom propre ou nombre perdu, résumé excessif, phrase reprise
+  du segment précédent. Un problème détecté est renvoyé au modèle, nommé
+  précisément, une fois ; ce qui reste est journalisé ;
+- **pas de contexte des phrases voisines** : essayé, il était traduit lui aussi,
+  et « Here are three tiles… » revenait dans trois segments de suite.
+
+Sur la démo, les 16 segments ne contiennent plus aucun *command*, le carton
+annonce « Three Tiles and Detailed Table » au lieu de « Three Vignettes & Command
+Details », et plus aucune phrase n'est coupée en deux. Quatre avertissements
+restent au journal, dont un vrai défaut que le modèle ne sait pas corriger même
+guidé : « on va mettre Nordic Tech » traduit sans le nom.
 
 ## Voix off
 
@@ -294,7 +328,9 @@ Ce qui reste à valider :
   effets texte (`callout`, `popup`) exigent `overlays.font_path` sous Windows,
   et un `zoom` ne peut pas être minuté (FFmpeg n'expose pas `crop` à la
   timeline).
-- **terminologie SAP** : le glossaire est vide et l'extrait de test ne porte pas
-  sur SAP — le cœur métier du projet n'a donc encore rien validé.
-- **découpage des phrases** : Whisper coupe au milieu des phrases et chaque
-  segment part au LLM isolément, ce qui produit des traductions fragmentées.
+- **terminologie SAP** : le glossaire couvre le vocabulaire des rapports de
+  ventes et de Fiori, validé sur la démo Sales Report ; les termes d'autres
+  applications SAP (finance, logistique) restent à ajouter.
+- **limites du modèle de traduction** : même guidé, un 3B perd encore des noms
+  propres ou résume trop sur certains segments. Les défauts sont détectés et
+  journalisés, pas tous corrigés.

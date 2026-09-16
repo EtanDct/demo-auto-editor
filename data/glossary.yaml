@@ -1,11 +1,48 @@
-# Glossaire des termes SAP : traductions FR -> EN validées manuellement.
-# Chargé par scripts/translate.py et injecté dans le prompt du LLM local
-# pour forcer une terminologie cohérente.
+# Glossaire : traductions FR -> EN imposées au LLM local (scripts/translate.py).
 #
-# Exemple :
-# - fr: "société"
-#   en: "company code"
-# - fr: "poste comptable"
-#   en: "GL account"
+# Un terme présent dans le texte français doit apparaître sous cette forme dans
+# la traduction ; sinon la traduction est redemandée en le signalant
+# (scripts/translation_checks.py). Comparaison sans accents ni casse, pluriel
+# toléré : « commandes » est couvert par « commande », « orders » par « order ».
+#
+# Vocabulaire des rapports de ventes et des applications Fiori. Les libellés
+# anglais suivent ceux affichés à l'écran quand ils existent (Customer, Status…).
 
-terms: []
+terms:
+  # Rapport de ventes
+  - fr: "commande"
+    en: "order"
+  - fr: "report des ventes"
+    en: "sales report"
+  - fr: "rapport des ventes"
+    en: "sales report"
+  - fr: "chiffre d'affaires"
+    en: "revenue"
+  - fr: "revenu"
+    en: "revenue"
+  - fr: "prix moyen"
+    en: "average"
+  - fr: "panier moyen"
+    en: "average order value"
+  - fr: "montant"
+    en: "amount"
+  - fr: "statut"
+    en: "status"
+  - fr: "client"
+    en: "customer"
+  - fr: "produit"
+    en: "product"
+  - fr: "catégorie"
+    en: "category"
+  - fr: "région"
+    en: "region"
+
+  # Interface Fiori
+  - fr: "vignette"
+    en: "tile"
+  - fr: "tableau"
+    en: "table"
+  - fr: "filtre"
+    en: "filter"
+  - fr: "barre de recherche"
+    en: "search bar"

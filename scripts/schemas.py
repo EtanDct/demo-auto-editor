@@ -12,6 +12,14 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 
+class TranscriptWord(BaseModel):
+    """Un mot horodaté par Whisper : c'est ce qui permet de couper au mot près."""
+
+    text: str
+    start: float = Field(ge=0)
+    end: float
+
+
 class TranscriptSegment(BaseModel):
     """Un segment de la transcription française horodatée (étape B)."""
 
@@ -19,6 +27,9 @@ class TranscriptSegment(BaseModel):
     start: float = Field(ge=0)
     end: float
     text_fr: str
+    # Vide pour une transcription produite avant l'horodatage des mots : le
+    # découpage retombe alors sur les segments Whisper entiers.
+    words: list[TranscriptWord] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_order(self) -> "TranscriptSegment":
