@@ -19,7 +19,7 @@ vidéo source
   -> FFmpeg (montage, overlays, sous-titres)
 ```
 
-L'étape optionnelle `crop` retire au préalable le bandeau du navigateur —
+L'étape `crop` retire au préalable le bandeau du navigateur —
 onglets, URL, favoris — pour ne garder que la page présentée. Aucune hauteur
 n'est écrite en dur : la frontière est mesurée sur chaque vidéo, d'abord à la
 couleur de la barre supérieure de l'application (`#354a5f` sur le thème Fiori
@@ -38,7 +38,7 @@ d'entamer l'application.
 Deux briques préparent le montage automatique (synchroniser une incrustation
 avec le moment où le narrateur désigne un élément d'interface) :
 
-- l'étape optionnelle `screen` indexe par OCR local le texte affiché et à quel
+- l'étape `screen` indexe par OCR local le texte affiché et à quel
   moment (`data/screen_elements.json`) ;
 - l'étape `translate` fait déclarer au LLM, pour chaque segment, ce que le
   narrateur désigne (`ui_reference`) : un élément **nommé** par son libellé,
@@ -55,7 +55,8 @@ sur boîte aberrante, et consigne le motif de chaque refus. Seule la position du
 pointeur peut sauver un candidat écarté pour ambiguïté, et uniquement si elle
 tombe **sur** lui : le pointeur ne fabrique jamais une correspondance à partir
 de rien et ne renverse jamais un appariement déjà net. Rien n'atteint le
-conducteur de montage sans `--apply`, et `--contact-sheet` produit une planche
+conducteur de montage sans `--apply` — que le pipeline complet passe, pour que
+les cadres soient posés au rendu — et `--contact-sheet` produit une planche
 de relecture (cadre dessiné sur la frame, légende avec score et durée
 d'affichage) : valider une correspondance à l'œil prend deux secondes, saisir
 les coordonnées à la main en prend deux minutes.
@@ -125,40 +126,36 @@ FFmpeg doit être installé séparément et disponible dans le PATH (sous Window
 ## Utilisation
 
 ```bash
-# Pipeline complet
-python run.py --input input/source.mp4
+# Pipeline complet, de la vidéo au rendu : une seule commande
+python run.py --input input/demo.mp4
 
-# Étape par étape (débogage / reprise partielle)
-python run.py --step transcribe
-python run.py --step translate
-python run.py --step narrate
-python run.py --step retime
-python run.py --step subtitles
+# Reprendre à une étape, jusqu'à la fin (après une correction, un échec…)
+python run.py --from translate
+
+# Une seule étape (débogage)
 python run.py --step render
-python run.py --step validate
-
-# Régénérer seulement les chapitres, sans retraduire
-python scripts/translate.py --chapters-only
-
-# Hors pipeline par défaut : retrait du bandeau de navigateur
-python run.py --step crop
-
-# Hors pipeline par défaut : index OCR du texte à l'écran (plusieurs minutes)
-python run.py --step screen
-python scripts/detect_screen_text.py --max-seconds 40   # essai sur une tranche
-python scripts/detect_screen_text.py --regroup          # re-règle sans relancer l'OCR
-
-# Hors pipeline par défaut : suivi du pointeur (réutilise les frames de `screen`)
-python run.py --step cursor
-
-# Hors pipeline par défaut : appariement narrateur / écran
-python run.py --step match                              # rapport seul
-python scripts/match_overlays.py --contact-sheet        # + planche de relecture
-python scripts/match_overlays.py --apply                # reporter dans l'EDL
 ```
 
-Les étapes lisent et écrivent les fichiers de `data/` : après correction d'un
-conducteur de montage à la main, il suffit de reprendre à `retime`.
+Le pipeline complet enchaîne douze étapes, dans l'ordre où chacune trouve ce
+qu'elle attend : `inspect`, `crop` (retrait du bandeau de navigateur),
+`transcribe`, `translate`, `screen` (OCR du texte à l'écran, la plus longue),
+`cursor` (trajectoire du pointeur), `match` (rapprochement narrateur/écran,
+reporté dans le conducteur de montage), `narrate`, `retime`, `subtitles`,
+`render`, `validate`. Une étape qui échoue arrête le passage en indiquant la
+commande de reprise ; à la fin, un bilan donne la durée de chaque étape.
+
+Quelques commandes de mise au point, hors pipeline :
+
+```bash
+python scripts/translate.py --chapters-only              # régénérer les chapitres seuls
+python scripts/detect_screen_text.py --max-seconds 40    # OCR sur une tranche
+python scripts/detect_screen_text.py --regroup           # re-régler sans relancer l'OCR
+python scripts/match_overlays.py --contact-sheet         # rapport de rapprochement, sans rien écrire
+```
+
+Les étapes lisent et écrivent les fichiers de `data/` : après correction du
+texte anglais dans le conducteur de montage, `python run.py --from narrate`
+régénère la voix et tout ce qui en dépend.
 
 ## Organisation du dépôt
 
