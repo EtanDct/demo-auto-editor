@@ -137,6 +137,9 @@ python run.py --step subtitles
 python run.py --step render
 python run.py --step validate
 
+# Régénérer seulement les chapitres, sans retraduire
+python scripts/translate.py --chapters-only
+
 # Hors pipeline par défaut : retrait du bandeau de navigateur
 python run.py --step crop
 
@@ -166,22 +169,62 @@ data/        métadonnées, transcription, conducteur de montage, sous-titres,
 audio/       audio source et narration générée (non versionné)
 frames/      vignettes extraites (non versionné)
 overlays/    assets d'incrustation (zoom, highlight, callout...)
-work/        vidéo recadrée et carton d'intro (non versionné)
+work/        vidéo recadrée, cartons d'intro et de fin (non versionné)
 scripts/     étapes du pipeline
 output/      rendus finaux (non versionné)
 logs/        journaux d'exécution
 models/      poids des modèles téléchargés (non versionné)
 ```
 
-## Carton d'introduction
+## Cartons d'introduction et de fin
 
 La vidéo livrée s'ouvre sur un carton de cinq secondes. Le titre est produit par
 le LLM local à partir du début de la transcription et écrit dans
 `data/intro.json` ; `intro.title` et `intro.subtitle` dans `config.yaml` le
 remplacent sans relancer la traduction, et `intro.enabled: false` le supprime.
 
-Le carton est encodé à part aux paramètres exacts du master puis collé devant
-lui sans réencodage : rien à décaler côté audio, sous-titres ou timeline.
+Elle se ferme sur un carton de quatre secondes aux mêmes couleurs, qui reprend
+ce titre avec « Thanks for watching » (`outro.title`, `outro.subtitle`,
+`outro.enabled`).
+
+Les cartons sont encodés à part aux paramètres exacts du master puis collés de
+part et d'autre sans réencodage : rien à décaler côté audio, sous-titres ou
+timeline.
+
+## Mise en page de livraison
+
+Le recadrage retire un bandeau dont la hauteur change d'une capture à l'autre.
+Plutôt que de livrer des formats différents, l'image est posée sur un canevas
+fixe (**1920×1080** par défaut, `layout.width` / `layout.height`) et la place
+libérée devient deux bandes, sur fond `#354a5f` qui prolonge la barre Fiori :
+
+- **en haut**, le chapitre en cours (« 2/4 Sales Order Report »), le rappel en
+  pastille du nom de l'élément encadré, un logo optionnel, et un filet de
+  progression marqué à chaque changement de chapitre, qui sépare la bande de
+  l'application ;
+- **en bas**, les sous-titres, centrés dans la bande : ils ne masquent plus
+  l'interface.
+
+Aucune hauteur n'est fixée en dur : les bandes sont ce qui reste une fois
+l'image posée. Quand la place manque, la bande du haut disparaît d'abord, puis
+les sous-titres reviennent sur l'image. Une capture trop grande est réduite
+juste assez pour tenir ; une plus petite est agrandie tant que les bandes
+tiennent encore. `layout.enabled: false` livre l'image à sa taille rognée.
+
+**Chapitres.** La narration est découpée en tranches de durées voisines (une
+pour ~35 s, `layout.chapter_seconds`) que le LLM ne fait que nommer, à
+température nulle. Prié de choisir lui-même où couper, un modèle 3B faisait un
+chapitre par phrase. Le résultat, `data/chapters.json`, se corrige à la main ;
+sans chapitres valides, la bande affiche le titre de la vidéo.
+
+**Rappel.** Seuls les cadres posés par l'appariement narrateur/écran sont
+nommés dans la bande : les survols de la souris produisent encore trop de faux
+positifs pour qu'on écrive leur nom en toutes lettres.
+
+**Logo.** `layout.logo_path` accepte un PNG, de préférence à fond transparent,
+aligné à droite de la bande du haut. Préférez le vôtre à celui d'un éditeur :
+un logo de marque tierce peut faire passer la vidéo pour une production
+officielle.
 
 ## Tests
 

@@ -211,6 +211,59 @@ intro:
   title_size: 84
   subtitle_size: 40
 
+outro:
+  # Carton de fin, symétrique à l'introduction (mêmes couleurs, mêmes tailles).
+  enabled: true
+  duration_seconds: 4.0
+  fade_seconds: 0.6
+  title: null                     # null = titre de l'introduction
+  subtitle: "Thanks for watching" # null = pas de sous-titre
+
+layout:
+  # Mise en page de la vidéo livrée. Le recadrage retire le bandeau du
+  # navigateur ; plutôt que livrer une hauteur qui change d'une vidéo à l'autre,
+  # l'image est posée sur un canevas fixe et la place libérée devient deux
+  # bandes : en haut le chapitre en cours, en bas les sous-titres, qui ne
+  # masquent ainsi plus l'interface. Rien n'est fixé en dur : la hauteur des
+  # bandes est ce qui reste une fois l'image posée, et si elle ne suffit pas, les
+  # sous-titres reviennent sur l'image et la bande du haut disparaît.
+  enabled: true
+  width: 1920
+  height: 1080
+  background: "0x354a5f"   # prolonge la barre Fiori
+  top_height: 64           # bande du haut quand la place le permet
+  min_bottom_height: 110   # en dessous, pas de bande de sous-titres
+  band_padding: 32         # marge latérale du texte dans les bandes
+  font_name: Arial         # police des sous-titres (libass, par son nom)
+  subtitle_size: 40        # réduite si la bande est trop basse pour deux lignes
+  subtitle_color: white
+  top_text_size: 28
+  text_color: white
+  muted_color: "0xC5D0DA"
+  accent_color: "0xF5B800" # barre de progression et rappel des cadres
+  track_color: "0x24333F"  # fond de la barre de progression
+  fade_seconds: 0.3        # fondu des changements de chapitre et des rappels
+
+  # Chapitres : la narration est découpée en tranches de durées voisines, que
+  # le LLM ne fait que nommer (data/chapters.json, modifiable à la main). Sans
+  # chapitres valides, la bande affiche le titre de la vidéo.
+  chapters_enabled: true
+  chapter_seconds: 35      # un chapitre pour ~35 s de narration
+  max_chapters: 6
+  max_chapter_chars: 32
+
+  # Rappel, dans la bande du haut, du nom de l'élément encadré. Seulement pour
+  # les correspondances narrateur/écran : les survols de la souris produisent
+  # encore trop de faux positifs pour être nommés.
+  echo_enabled: true
+  echo_text_color: "0x1A1A1A"
+
+  progress_enabled: true   # filet de progression sous la bande du haut
+  progress_thickness: 4
+
+  logo_path: null          # PNG, de préférence à fond transparent
+  logo_height: 36
+
 export:
   container: mp4
   video_codec: libx264

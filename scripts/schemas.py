@@ -308,3 +308,16 @@ class IntroText(BaseModel):
 
     title: str = Field(min_length=1)
     subtitle: str = ""
+
+
+class Chapter(BaseModel):
+    """Une étape de la démonstration, affichée dans la bande du haut."""
+
+    title: str = Field(min_length=1)
+    first_segment: str
+
+
+class ChapterPlan(BaseModel):
+    """`data/chapters.json`, produit à l'étape C et modifiable à la main."""
+
+    chapters: list[Chapter] = Field(default_factory=list)

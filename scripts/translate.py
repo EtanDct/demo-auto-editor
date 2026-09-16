@@ -30,6 +30,8 @@ import yaml
 from llm_client import load_llm
 from pipeline_config import PROJECT_ROOT, PipelineConfig, load_config
 from schemas import (
+    Chapter,
+    ChapterPlan,
     EditDecision,
     Glossary,
     IntroText,
@@ -199,7 +201,7 @@ def resolve_ui_reference(result: TranslationResult, segment_id: str) -> UiRefere
 
 def translate(
     segments: list[TranscriptSegment], glossary: Glossary, config: PipelineConfig
-) -> tuple[list[EditDecision], IntroText | None]:
+) -> tuple[list[EditDecision], IntroText | None, ChapterPlan]:
     llm = load_llm(config)
     decisions = []
     for segment in segments:
@@ -227,7 +229,132 @@ def translate(
         # se passera simplement de carton.
         logger.warning("Titre d'introduction non généré : %s", exc)
 
-    return decisions, intro
+    chapters = ChapterPlan()
+    if config.layout.enabled and config.layout.chapters_enabled:
+        chapters = build_chapters(llm, decisions, config)
+
+    return decisions, intro, chapters
+
+
+def slice_into_chapters(
+    decisions: list[EditDecision], chapter_seconds: float, max_chapters: int
+) -> list[list[EditDecision]]:
+    """Découpe la narration en tranches consécutives de durées voisines.
+
+    Les frontières sont calculées, pas demandées au modèle. Sondé sur la démo
+    Sales Report : prié de choisir lui-même où couper, un 3B faisait un chapitre
+    par phrase (15 sur 15) ; prié d'en faire exactement quatre, il rendait des
+    frontières dans le désordre, ou un dernier chapitre de 11 phrases sur 15.
+    Nommer des tranches déjà découpées, il le fait bien.
+
+    Chaque phrase va à la tranche où tombe son milieu : une phrase longue à
+    cheval sur deux tranches ne fausse pas le partage.
+    """
+    total = sum(d.source_end - d.source_start for d in decisions)
+    count = min(max_chapters, round(total / chapter_seconds)) if chapter_seconds > 0 else 0
+    if count < 2 or len(decisions) < 2 * count:
+        return []
+
+    slices: list[list[EditDecision]] = [[] for _ in range(count)]
+    elapsed = 0.0
+    for decision in decisions:
+        length = decision.source_end - decision.source_start
+        slices[min(count - 1, int((elapsed + length / 2) / total * count))].append(decision)
+        elapsed += length
+    return [s for s in slices if s]
+
+
+def chapters_prompt(count: int) -> str:
+    return f"""You name the parts of a software demo video. You get {count} parts, in order.
+Give each part a title of 1 to 3 English words naming what is SHOWN in it.
+Never use generic titles such as "Introduction", "Overview", "Conclusion", "Demo", "Part 2".
+
+Answer ONLY with valid JSON, without any text before or after:
+{{"titles": [<title of part 1>, ..., <title of part {count}>]}}"""
+
+
+def generate_chapter_titles(llm, slices: list[list[EditDecision]]) -> list[str]:
+    """Un titre par tranche, à température nulle : les chapitres doivent être
+    reproductibles d'un passage à l'autre. La narration adaptée plutôt que la
+    transcription : les titres s'affichent en anglais, et un texte déjà épuré de
+    ses hésitations se résume mieux."""
+    listing = "\n\n".join(
+        f"Part {index}:\n" + "\n".join(d.text_en[:160] for d in part)
+        for index, part in enumerate(slices, 1)
+    )
+    response = llm.create_chat_completion(
+        messages=[
+            {"role": "system", "content": chapters_prompt(len(slices))},
+            {"role": "user", "content": listing},
+        ],
+        temperature=0.0,
+        response_format={"type": "json_object"},
+    )
+    titles = json.loads(response["choices"][0]["message"]["content"])["titles"]
+    if not isinstance(titles, list):
+        raise ValueError(f"'titles' n'est pas une liste : {titles!r}")
+    return [str(title) for title in titles]
+
+
+def assemble_chapters(
+    titles: list[str], slices: list[list[EditDecision]], max_chars: int
+) -> ChapterPlan:
+    """Associe les titres aux tranches, ou refuse.
+
+    Un titre en trop se laisse tomber ; un titre manquant ou vide ne se devine
+    pas, et un chapitre sans nom afficherait un index seul : on refuse tout, la
+    bande affichera le titre de la vidéo.
+    """
+    cleaned = [_shorten(title, max_chars) for title in titles[: len(slices)]]
+    if len(cleaned) < len(slices) or not all(cleaned):
+        return ChapterPlan()
+    return ChapterPlan(
+        chapters=[
+            Chapter(title=title, first_segment=part[0].id)
+            for title, part in zip(cleaned, slices)
+        ]
+    )
+
+
+def _shorten(title: str, max_chars: int) -> str:
+    """Titre nettoyé et borné, coupé entre deux mots."""
+    title = " ".join(title.split()).strip(" .:;-\"'")
+    if len(title) <= max_chars:
+        return title
+    return title[:max_chars].rsplit(" ", 1)[0].strip(" .:;-")
+
+
+def write_chapters(plan: ChapterPlan, out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+    if plan.chapters:
+        logger.info(
+            "Chapitres : %s (%s)", " | ".join(c.title for c in plan.chapters), out_path
+        )
+    else:
+        logger.info("Aucun chapitre retenu : la bande du haut affichera le titre (%s)", out_path)
+
+
+def build_chapters(llm, decisions: list[EditDecision], config: PipelineConfig) -> ChapterPlan:
+    """Chapitres validés, ou aucun : un échec ne doit pas faire tomber l'étape."""
+    slices = slice_into_chapters(
+        decisions, config.layout.chapter_seconds, config.layout.max_chapters
+    )
+    if not slices:
+        logger.info("Vidéo trop courte pour la découper en chapitres.")
+        return ChapterPlan()
+    try:
+        titles = generate_chapter_titles(llm, slices)
+    except (ValueError, KeyError, TypeError) as exc:
+        logger.warning("Titres de chapitres non générés : %s", exc)
+        return ChapterPlan()
+    plan = assemble_chapters(titles, slices, config.layout.max_chapter_chars)
+    if not plan.chapters:
+        logger.warning(
+            "Titres de chapitres refusés (%d pour %d tranches) : %s",
+            len(titles), len(slices), titles,
+        )
+    return plan
 
 
 TITLE_PROMPT = """Tu résumes une vidéo de démonstration logicielle en un titre de carton d'introduction.
@@ -281,9 +408,24 @@ def write_edl(decisions: list[EditDecision], out_path: Path) -> None:
 
 
 @app.command()
-def main(config_path: Path = typer.Option(None, help="Chemin vers config.yaml.")) -> None:
+def main(
+    config_path: Path = typer.Option(None, help="Chemin vers config.yaml."),
+    chapters_only: bool = typer.Option(
+        False,
+        "--chapters-only",
+        help="Ne régénérer que les chapitres, à partir du conducteur existant.",
+    ),
+) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     config = load_config(config_path)
+    data_dir = config.paths.resolve("data_dir")
+    if chapters_only:
+        from build_narration import load_edl
+
+        decisions = load_edl(data_dir / "edit_decision_list.yaml")
+        write_chapters(build_chapters(load_llm(config), decisions, config), data_dir / "chapters.json")
+        return
+
     segments = load_transcript(config.paths.resolve("data_dir") / "transcript_fr.json")
     merged = merge_into_sentences(segments, config.llm.max_segment_seconds)
     if len(merged) < len(segments):
@@ -294,10 +436,11 @@ def main(config_path: Path = typer.Option(None, help="Chemin vers config.yaml.")
         )
     segments = merged
     glossary = load_glossary(PROJECT_ROOT / config.glossary_file)
-    decisions, intro = translate(segments, glossary, config)
-    write_edl(decisions, config.paths.resolve("data_dir") / "edit_decision_list.yaml")
+    decisions, intro, chapters = translate(segments, glossary, config)
+    write_edl(decisions, data_dir / "edit_decision_list.yaml")
     if intro is not None:
-        write_intro_text(intro, config.paths.resolve("data_dir") / "intro.json")
+        write_intro_text(intro, data_dir / "intro.json")
+    write_chapters(chapters, data_dir / "chapters.json")
 
 
 if __name__ == "__main__":
