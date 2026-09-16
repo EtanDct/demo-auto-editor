@@ -112,3 +112,47 @@ def test_les_sous_titres_ne_se_chevauchent_pas(config):
     debuts = [b.split(" --> ")[0] for b in bornes]
 
     assert debuts[1:] == fins[:-1]
+
+
+# --- coupure entre deux sous-titres -------------------------------------------
+
+def test_un_sous_titre_se_termine_sur_une_fin_de_phrase_plutot_qu_en_plein_groupe():
+    """Régression : « …one for revenues, one for the » restait en suspens."""
+    text = (
+        "Let's see how it behaves. Here are three tiles: one for revenues, "
+        "one for the number of orders, and one for the average price."
+    )
+
+    cues = split_into_cues(text, 42, 2)
+
+    # Plein, le premier sous-titre s'arrêtait sur « …one for the » ; il s'arrête
+    # désormais sur la virgule qui précède.
+    assert cues[0][-1].endswith("revenues,")
+    assert all(not cue[-1].endswith(("the", "for", "of")) for cue in cues)
+    assert " ".join(l for cue in cues for l in cue).split() == text.split()
+
+
+def test_a_defaut_de_point_la_coupure_tombe_sur_une_virgule():
+    text = (
+        "Filter by region and category, then clear every filter "
+        "to see all the orders again from the start"
+    )
+
+    cues = split_into_cues(text, 30, 2)
+
+    assert cues[0][-1].endswith(",")
+
+
+def test_une_ponctuation_trop_precoce_ne_vide_pas_le_sous_titre():
+    """Couper après « Yes, » laisserait un sous-titre d'un mot."""
+    text = "Yes, then we open the sales report and look at every order in the table below it"
+
+    cues = split_into_cues(text, 30, 2)
+
+    assert len(" ".join(cues[0]).split()) > 2
+
+
+def test_sans_ponctuation_le_remplissage_reste_maximal():
+    cues = split_into_cues("one two three four five six seven eight nine ten", 12, 2)
+
+    assert cues[0] == ["one two", "three four"]
