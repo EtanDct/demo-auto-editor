@@ -175,6 +175,33 @@ logs/        journaux d'exécution
 models/      poids des modèles téléchargés (non versionné)
 ```
 
+## Traduction
+
+La traduction passe par un LLM local de 3B paramètres, qui suit mal les
+consignes générales. Relue segment par segment sur la démo Sales Report, elle
+rendait « commande » par *command*, réduisait 30 mots à « Click Clear. », et
+traduisait des moitiés de phrases coupées par Whisper (« moyen par commande »
+→ « by command »). Quatre mécanismes y répondent :
+
+- **découpage au mot près** (`scripts/segmentation.py`) : Whisper horodate
+  chaque mot, et les segments sont recoupés sur la ponctuation. Une phrase trop
+  longue est coupée à ses virgules ou ses silences, puis ses morceaux sont
+  réassemblés jusqu'à 14 s ;
+- **glossaire imposé** (`data/glossary.yaml`) : vocabulaire des rapports de
+  ventes et de Fiori, appliqué aussi au titre du carton ;
+- **relecture automatique** (`scripts/translation_checks.py`) : terme du
+  glossaire manquant, nom propre ou nombre perdu, résumé excessif, phrase reprise
+  du segment précédent. Un problème détecté est renvoyé au modèle, nommé
+  précisément, une fois ; ce qui reste est journalisé ;
+- **pas de contexte des phrases voisines** : essayé, il était traduit lui aussi,
+  et « Here are three tiles… » revenait dans trois segments de suite.
+
+Sur la démo, les 16 segments ne contiennent plus aucun *command*, le carton
+annonce « Three Tiles and Detailed Table » au lieu de « Three Vignettes & Command
+Details », et plus aucune phrase n'est coupée en deux. Quatre avertissements
+restent au journal, dont un vrai défaut que le modèle ne sait pas corriger même
+guidé : « on va mettre Nordic Tech » traduit sans le nom.
+
 ## Voix off
 
 La narration est synthétisée en local par **Kokoro-82M** (licence Apache 2.0), voix
@@ -294,7 +321,9 @@ Ce qui reste à valider :
   effets texte (`callout`, `popup`) exigent `overlays.font_path` sous Windows,
   et un `zoom` ne peut pas être minuté (FFmpeg n'expose pas `crop` à la
   timeline).
-- **terminologie SAP** : le glossaire est vide et l'extrait de test ne porte pas
-  sur SAP — le cœur métier du projet n'a donc encore rien validé.
-- **découpage des phrases** : Whisper coupe au milieu des phrases et chaque
-  segment part au LLM isolément, ce qui produit des traductions fragmentées.
+- **terminologie SAP** : le glossaire couvre le vocabulaire des rapports de
+  ventes et de Fiori, validé sur la démo Sales Report ; les termes d'autres
+  applications SAP (finance, logistique) restent à ajouter.
+- **limites du modèle de traduction** : même guidé, un 3B perd encore des noms
+  propres ou résume trop sur certains segments. Les défauts sont détectés et
+  journalisés, pas tous corrigés.

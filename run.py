@@ -38,7 +38,6 @@ ALL_STEPS = STEP_ORDER + EXTRA_STEPS
 
 SIMPLE_STEPS = {
     "transcribe": "transcribe",
-    "translate": "translate",
     "narrate": "build_narration",
     "retime": "build_timeline",
     "subtitles": "subtitles",
@@ -69,6 +68,13 @@ def _run_step(step: str, config_path: Path | None, input_override: Path | None) 
         import match_overlays
 
         match_overlays.main(config_path=config_path, apply=False, contact_sheet=False)
+    elif step == "translate":
+        import translate
+
+        # Tous les paramètres explicitement : appelée hors de typer, une option
+        # omise reçoit son objet `typer.Option`, qui vaut vrai. `chapters_only`
+        # omis réduisait ainsi l'étape à la seule régénération des chapitres.
+        translate.main(config_path=config_path, chapters_only=False)
     elif step == "render":
         import render_video
 
