@@ -14,7 +14,7 @@ Aucune donnée SAP (écran, audio, texte) ne doit être transmise à un service 
 vidéo source
   -> faster-whisper local (transcription FR)
   -> LLM local (traduction EN + conducteur de montage)
-  -> moteur vocal local (Kokoro / Piper)
+  -> moteur vocal local (Kokoro)
   -> recalage des timecodes
   -> FFmpeg (montage, overlays, sous-titres)
 ```
@@ -103,7 +103,7 @@ Script unique (installe FFmpeg si absent, crée le venv, installe les dépendanc
 .\setup.ps1          # Windows
 ```
 
-Puis télécharge les modèles (Whisper, LLM, voix Piper — plusieurs Go depuis Hugging Face) :
+Puis télécharge les modèles (Whisper et LLM depuis Hugging Face, voix Kokoro depuis GitHub — plusieurs Go) :
 
 ```bash
 python scripts/download_models.py
@@ -175,6 +175,25 @@ output/      rendus finaux (non versionné)
 logs/        journaux d'exécution
 models/      poids des modèles téléchargés (non versionné)
 ```
+
+## Voix off
+
+La narration est synthétisée en local par **Kokoro-82M** (licence Apache 2.0), voix
+`af_heart` par défaut, via le paquet `kokoro-onnx` qui tourne sur onnxruntime,
+sans GPU. Les fichiers (325 Mo de modèle, 28 Mo de voix) sont tirés une fois par
+`download_models.py`.
+
+Sur la démo Sales Report, comparée à l'ancienne voix Piper `en_US-amy-medium` :
+
+| | Piper | Kokoro |
+|---|---|---|
+| Synthèse des 15 phrases | 18 s | 43 s (chargement compris) |
+| Durée de la narration | 85,9 s | 73,7 s |
+| Mots reconnus par Whisper | 96 % | 99 % |
+
+Le débit plus rapide laisse davantage de blanc à retirer : la vidéo livrée passe
+de 111 s à 100 s. Piper a depuis été retiré du projet ; `tts.voice` change de
+voix et `tts.speed` règle le débit.
 
 ## Cartons d'introduction et de fin
 

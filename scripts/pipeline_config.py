@@ -78,10 +78,12 @@ class LlmConfig(BaseModel):
 
 
 class TtsConfig(BaseModel):
-    engine: str = "piper"
-    piper_repo_id: str
     voice: str
-    sample_rate: int = 22050
+    speed: float = 1.0
+    lang: str = "en-us"
+    kokoro_release: str = "model-files-v1.0"
+    kokoro_model: str = "kokoro-v1.0.onnx"
+    kokoro_voices: str = "voices-v1.0.bin"
 
 
 class RetimingConfig(BaseModel):

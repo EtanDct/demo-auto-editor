@@ -38,7 +38,7 @@ La transcription, la traduction, le conducteur de montage et la voix doivent tou
 
 - **Transcription** : `faster-whisper`, avec le modèle `small` comme compromis initial entre précision et consommation de ressources. `tiny` convient aux tests rapides ; `medium` améliore la précision mais nécessite davantage de ressources.
 - **Traduction et adaptation** : modèle de langage local Qwen de 3B ou 4B quantifié, exécuté via `llama.cpp` ou Ollama. Le modèle reçoit le glossaire SAP et doit retourner une structure validable, pas uniquement du texte libre.
-- **Voix locale** : Kokoro pour rechercher un rendu plus naturel ; Piper pour privilégier la légèreté et la vitesse. Plusieurs voix doivent être comparées sur un extrait représentatif.
+- **Voix locale** : Kokoro-82M, voix `af_heart`. Piper a été essayé d'abord puis retiré : plus rapide, mais nettement moins naturel à l'écoute, et moins bien reconnu par Whisper (96 % des mots contre 99 %) sur la démo Sales Report.
 
 Configuration indicative :
 
@@ -162,7 +162,7 @@ Choix possibles :
 - **Moteur local** : contrôle des données et reproductibilité, mais qualité vocale et installation potentiellement plus complexes ;
 - **Voix humaine** : qualité maximale, mais hors du périmètre automatisé actuel.
 
-**Choix recommandé** : moteur vocal local Kokoro ou Piper, avec génération par segments, cache local des résultats et contrôle explicite de la prononciation des termes SAP. Cette option doit faire l'objet d'un test d'écoute sur plusieurs segments, car la qualité perçue et la prononciation des noms SAP peuvent varier selon le modèle et la voix sélectionnée.
+**Choix retenu** : moteur vocal local Kokoro, avec génération par segments, cache local des résultats et contrôle explicite de la prononciation des termes SAP. Cette option doit faire l'objet d'un test d'écoute sur plusieurs segments, car la qualité perçue et la prononciation des noms SAP peuvent varier selon le modèle et la voix sélectionnée.
 
 Le pipeline doit générer `narration_manifest.json` :
 
@@ -348,7 +348,7 @@ Le prototype est important : il permet de tester le naturel de la voix et la lis
 - FFmpeg et ffprobe
 - `faster-whisper` local, modèle `small` par défaut
 - Modèle de langage local Qwen 3B/4B quantifié via `llama.cpp` ou Ollama
-- Kokoro ou Piper pour une voix locale
+- Kokoro pour une voix locale
 - YAML/JSON avec schéma validé
 - Git pour scripts et données textuelles
 - Stockage séparé pour médias lourds

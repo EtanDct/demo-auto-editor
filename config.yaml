@@ -90,10 +90,18 @@ llm:
   max_segment_seconds: 14.0
 
 tts:
-  engine: piper
-  piper_repo_id: rhasspy/piper-voices
-  voice: en_US-amy-medium
-  sample_rate: 22050
+  # Voix off Kokoro-82M (Apache 2.0), synthétisée en local sur onnxruntime,
+  # sans GPU. Autres voix : af_bella, af_nicole, am_michael, bf_emma…
+  voice: af_heart
+  # Débit de la voix. Le recalage accélère déjà légèrement si un plan est trop
+  # court (retiming.max_speed_factor) ; ici on règle le débit naturel.
+  speed: 1.0
+  lang: en-us
+  # Fichiers Kokoro, tirés des publications de kokoro-onnx sur GitHub.
+  # kokoro-v1.0.int8.onnx : ~4 fois plus léger et plus rapide, un peu moins fin.
+  kokoro_release: model-files-v1.0
+  kokoro_model: kokoro-v1.0.onnx
+  kokoro_voices: voices-v1.0.bin
 
 retiming:
   max_speed_factor: 1.08

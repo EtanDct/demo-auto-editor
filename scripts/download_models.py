@@ -1,7 +1,7 @@
-"""Téléchargement des modèles depuis Hugging Face (plan-technique.md, section 10).
+"""Téléchargement des modèles (plan-technique.md, section 10).
 
-Tire directement les poids depuis Hugging Face via `huggingface_hub`
-(pas d'Ollama ni de llama.cpp CLI). Chaque fichier téléchargé est vérifié
+Tire Whisper et le LLM depuis Hugging Face via `huggingface_hub` (pas d'Ollama
+ni de llama.cpp CLI), et la voix Kokoro depuis les publications de kokoro-onnx. Chaque fichier téléchargé est vérifié
 par SHA-256 et consigné dans models/manifest.json pour la reproductibilité.
 
 Usage :
@@ -14,10 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import platform
-import tarfile
 import urllib.request
-import zipfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,25 +27,6 @@ from pipeline_config import PROJECT_ROOT, load_config
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
-
-# piper-tts (PyPI) dépend de piper-phonemize, sans wheel Windows : on utilise
-# à la place le binaire officiel publié par le projet (une seule release
-# couvre toutes les plateformes ci-dessous).
-PIPER_RELEASE_TAG = "2023.11.14-2"
-PIPER_ASSETS = {
-    ("Windows", None): "piper_windows_amd64.zip",
-    ("Linux", "x86_64"): "piper_linux_x86_64.tar.gz",
-    ("Linux", "aarch64"): "piper_linux_aarch64.tar.gz",
-    ("Linux", "armv7l"): "piper_linux_armv7l.tar.gz",
-    ("Darwin", "x86_64"): "piper_macos_x64.tar.gz",
-    ("Darwin", "arm64"): "piper_macos_aarch64.tar.gz",
-}
-
-
-def piper_executable_path(models_dir: Path) -> Path:
-    exe_name = "piper.exe" if platform.system() == "Windows" else "piper"
-    return models_dir / "piper_bin" / "piper" / exe_name
-
 
 @dataclass
 class DownloadedModel:
@@ -79,13 +57,6 @@ def _record(name: str, repo_id: str, local_path: Path) -> DownloadedModel:
     )
 
 
-def parse_piper_voice(voice: str) -> tuple[str, str, str, str]:
-    """"en_US-amy-medium" -> (lang_family="en", lang_code="en_US", speaker="amy", quality="medium")."""
-    lang_code, speaker, quality = voice.split("-")
-    lang_family = lang_code.split("_")[0]
-    return lang_family, lang_code, speaker, quality
-
-
 def download_whisper(config, models_dir: Path) -> list[DownloadedModel]:
     target = models_dir / "whisper" / config.whisper.model_size
     logger.info("Téléchargement Whisper (%s) vers %s", config.whisper.model_repo, target)
@@ -108,73 +79,46 @@ def download_llm(config, models_dir: Path) -> list[DownloadedModel]:
     return [_record("llm", config.llm.repo_id, Path(local_path))]
 
 
-def _piper_asset_name() -> str:
-    system = platform.system()
-    machine = platform.machine()
-    key = (system, None) if system == "Windows" else (system, machine)
-    asset = PIPER_ASSETS.get(key)
-    if asset is None:
-        raise RuntimeError(
-            f"Plateforme non supportée pour le binaire Piper : {system}/{machine}. "
-            f"Plateformes connues : {sorted(PIPER_ASSETS)}"
-        )
-    return asset
+KOKORO_REPO = "thewh1teagle/kokoro-onnx"
 
 
-def download_piper_binary(models_dir: Path) -> list[DownloadedModel]:
-    exe_path = piper_executable_path(models_dir)
-    if exe_path.exists():
-        logger.info("Binaire Piper déjà présent : %s", exe_path)
-        return [_record("piper-binary", "rhasspy/piper", exe_path)]
-
-    target_dir = models_dir / "piper_bin"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    asset = _piper_asset_name()
-    url = f"https://github.com/rhasspy/piper/releases/download/{PIPER_RELEASE_TAG}/{asset}"
-    archive_path = target_dir / asset
-
-    logger.info("Téléchargement du binaire Piper depuis %s", url)
-    urllib.request.urlretrieve(url, archive_path)  # noqa: S310 (URL fixe, contrôlée par ce module)
-
-    logger.info("Extraction de %s", archive_path)
-    if asset.endswith(".zip"):
-        with zipfile.ZipFile(archive_path) as zf:
-            zf.extractall(target_dir)
-    else:
-        with tarfile.open(archive_path) as tf:
-            tf.extractall(target_dir)
-    archive_path.unlink()
-
-    if platform.system() != "Windows":
-        exe_path.chmod(0o755)
-
-    if not exe_path.exists():
-        raise RuntimeError(f"Binaire Piper introuvable après extraction : {exe_path}")
-
-    return [_record("piper-binary", "rhasspy/piper", exe_path)]
+def kokoro_paths(config, models_dir: Path) -> tuple[Path, Path]:
+    """Modèle et banque de voix Kokoro, tels que build_narration les attend."""
+    target = models_dir / "kokoro"
+    return target / config.tts.kokoro_model, target / config.tts.kokoro_voices
 
 
-def download_tts(config, models_dir: Path) -> list[DownloadedModel]:
-    records = download_piper_binary(models_dir)
+def download_kokoro(config, models_dir: Path) -> list[DownloadedModel]:
+    """Modèle Kokoro-82M et banque de voix, depuis les publications de kokoro-onnx.
 
-    lang_family, lang_code, speaker, quality = parse_piper_voice(config.tts.voice)
-    subpath = f"{lang_family}/{lang_code}/{speaker}/{quality}/{config.tts.voice}"
-    target_dir = models_dir / "piper"
-    logger.info("Téléchargement voix Piper (%s)", config.tts.voice)
-    for ext in (".onnx", ".onnx.json"):
-        local_path = hf_hub_download(
-            repo_id=config.tts.piper_repo_id,
-            filename=f"{subpath}{ext}",
-            local_dir=target_dir,
-        )
-        records.append(_record(f"piper-voice{ext}", config.tts.piper_repo_id, Path(local_path)))
+    Deux fichiers, pas un dépôt Hugging Face : le paquet `kokoro-onnx` lit la
+    banque de voix dans son propre format (`voices-v1.0.bin`), que seules ses
+    publications fournissent.
+    """
+    records = []
+    for path in kokoro_paths(config, models_dir):
+        if path.exists():
+            logger.info("Fichier Kokoro déjà présent : %s", path)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            url = (
+                f"https://github.com/{KOKORO_REPO}/releases/download/"
+                f"{config.tts.kokoro_release}/{path.name}"
+            )
+            logger.info("Téléchargement de %s", url)
+            partial = path.with_suffix(path.suffix + ".part")
+            # Écrit à côté puis renommé : un téléchargement interrompu ne laisse
+            # pas un fichier tronqué que l'étape suivante prendrait pour bon.
+            urllib.request.urlretrieve(url, partial)  # noqa: S310 (URL construite ici)
+            partial.replace(path)
+        records.append(_record(f"kokoro-{path.name}", KOKORO_REPO, path))
     return records
 
 
 STEPS = {
     "whisper": download_whisper,
     "llm": download_llm,
-    "tts": download_tts,
+    "tts": download_kokoro,
 }
 
 
